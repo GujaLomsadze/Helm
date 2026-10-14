@@ -24,6 +24,29 @@ or use `dist/desktop/TRK Setup 0.1.0.exe` to install it with Desktop and Start m
 shortcuts. Closing the window keeps the tracker and running agents alive.
 See [desktop build instructions](desktop/README.md) to produce these files.
 
+#### Build or update the Windows installer
+
+Install Node.js 22.12 or newer and the Go version specified in `go.mod`.
+For the first build, run these PowerShell commands from the repository root:
+
+```powershell
+cd desktop
+npm ci
+npm run dist:win
+```
+
+After changing Go code, dashboard files, or Electron code, run `npm run dist:win`
+again from `desktop/`. It recompiles the Go backend, bundles the dashboard, and
+generates `dist/desktop/TRK Setup 0.1.0.exe` relative to the repository root.
+No separate `go build` is needed. Run `npm ci` again if dependency files change.
+
+To apply the update:
+
+1. Use the dashboard's power button to stop TRK. This also stops agents launched by TRK.
+2. Close the desktop app; closing its window alone does not stop the backend.
+3. Run the newly generated installer.
+4. Launch TRK from its Desktop or Start menu shortcut to use the updated backend.
+
 ### Command line
 
 ```sh
