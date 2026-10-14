@@ -3,6 +3,7 @@ module github.com/GujaLomsadze/trk
 go 1.27.1
 
 require (
+	github.com/UserExistsError/conpty v0.1.4
 	github.com/creack/pty v1.1.24
 	github.com/gorilla/websocket v1.5.3
 	golang.org/x/sys v0.48.0

@@ -9,6 +9,8 @@ import (
 // payload is the union of fields TRK reads from CLI, hook and status line JSON.
 // Everything is optional; unknown fields are ignored; type mismatches skip the field.
 type payload struct {
+	ToolFiles   []string `json:"tool_files"`
+	ToolOutcome string   `json:"tool_outcome"`
 	// CLI verbs
 	Text  string `json:"text"`
 	Steps int    `json:"steps"`
@@ -20,6 +22,7 @@ type payload struct {
 	Model     json.RawMessage `json:"model"` // string (SessionStart) or object (status line)
 	// hooks
 	HookEvent        string          `json:"hook_event_name"`
+	SessionSource    string          `json:"source"`
 	ToolName         string          `json:"tool_name"`
 	ToolInput        json.RawMessage `json:"tool_input"`
 	ToolUseID        string          `json:"tool_use_id"`

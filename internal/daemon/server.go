@@ -4,6 +4,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -25,15 +26,16 @@ import (
 const maxBody = 4 << 20
 
 type Server struct {
-	st      *store.Store
-	fl      *fleet.Fleet
-	hub     *Hub
-	log     *log.Logger
-	now     func() int64
-	dirty   atomic.Bool
-	terms   *term.Manager // dashboard-started agents
-	termsOn atomic.Bool
-	stats   statsCache
+	st          *store.Store
+	fl          *fleet.Fleet
+	hub         *Hub
+	log         *log.Logger
+	now         func() int64
+	dirty       atomic.Bool
+	terms       *term.Manager // dashboard-started agents
+	termsOn     atomic.Bool
+	stats       statsCache
+	codexLimits codexLimitsCache
 	// OnShutdown stops the daemon; set by Run. Used by `trk update` to restart into the new binary.
 	OnShutdown func()
 	// OnStop pauses TRK (hooks stop respawning it) and then shuts down; set by Run.
@@ -60,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/terms/{id}/ws", s.attachTerm)
 	mux.HandleFunc("GET /v1/account", s.getAccount)
 	mux.HandleFunc("GET /v1/limits/history", s.getLimitHistory)
+	mux.HandleFunc("GET /v1/codex/limits", s.getCodexLimits)
 	mux.HandleFunc("GET /v1/stats", s.getStats)
 	mux.HandleFunc("GET /v1/stream", s.stream)
 	mux.HandleFunc("GET /healthz", s.healthz)
@@ -114,6 +117,10 @@ func (s *Server) postEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.st.Append(&ev); err != nil {
+		if errors.Is(err, store.ErrDuplicate) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		s.log.Printf("append: %v", err)
 		http.Error(w, "store error", http.StatusInternalServerError)
 		return
@@ -121,6 +128,11 @@ func (s *Server) postEvent(w http.ResponseWriter, r *http.Request) {
 	sess := s.fl.Apply(ev, now)
 	if err := s.st.UpsertSession(sess); err != nil {
 		s.log.Printf("upsert session: %v", err)
+	}
+	if ev.Provider == model.ProviderCodex && (ev.Kind == model.KindSessionStart || ev.Kind == model.KindPrompt) && s.terms.LinkCodex(env.TerminalID, ev.SessionID) {
+		if t, ok := s.terms.Get(env.TerminalID); ok && t.Info().Title != "" {
+			s.titleOnce(ev.SessionID, t.Info().Title)
+		}
 	}
 	if ev.Kind == model.KindStatus {
 		if err := s.st.SaveAccount(s.fl.Account()); err != nil {

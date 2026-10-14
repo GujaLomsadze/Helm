@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/GujaLomsadze/trk/internal/codex"
 	"github.com/GujaLomsadze/trk/internal/stats"
 	"github.com/GujaLomsadze/trk/internal/store"
 )
@@ -28,6 +29,11 @@ type statsCache struct {
 // days counts local calendar days ending today (1–90); tz is the browser's getTimezoneOffset().
 func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	provider := q.Get("provider")
+	if provider != "" && provider != "claude" && provider != "codex" && provider != "generic" {
+		http.Error(w, "unknown provider", http.StatusBadRequest)
+		return
+	}
 	days, err := strconv.Atoi(q.Get("days"))
 	if q.Get("days") == "" {
 		days, err = 7, nil
@@ -53,7 +59,7 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(keys)
 	now := s.now()
-	key := strconv.Itoa(days) + "|" + strconv.Itoa(tz) + "|" + strings.Join(keys, ",")
+	key := strconv.Itoa(days) + "|" + strconv.Itoa(tz) + "|" + strings.Join(keys, ",") + "|" + provider
 	s.stats.mu.Lock()
 	defer s.stats.mu.Unlock() // one computation at a time; a burst of reloads waits for the first
 	if s.stats.key == key && now-s.stats.at < statsTTL {
@@ -62,7 +68,7 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 	}
 	off := int64(tz) * 60000
 	since := floorDiv(now-off, dayMs)*dayMs + off - int64(days-1)*dayMs
-	in := stats.Input{PrevSince: since - int64(days)*dayMs, Since: since, Until: now + 1, Days: days, TZOffsetMin: tz, Repos: repos,
+	in := stats.Input{Provider: provider, PrevSince: since - int64(days)*dayMs, Since: since, Until: now + 1, Days: days, TZOffsetMin: tz, Repos: repos,
 		Prior: map[string]store.StatRow{}, Meta: map[string]stats.Meta{}}
 	if in.Rows, err = s.st.StatRows(in.PrevSince, in.Until); err != nil {
 		s.log.Printf("stats: %v", err)
@@ -87,7 +93,7 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			name = x.Name
 		}
-		in.Meta[x.SessionID] = stats.Meta{Name: name, Repo: x.Repo, Model: x.Model, Cwd: x.Cwd}
+		in.Meta[x.SessionID] = stats.Meta{Name: name, Repo: x.Repo, Model: x.Model, Cwd: x.Cwd, Provider: x.Provider, Background: codex.BackgroundSession(x)}
 	}
 	res := stats.Compute(in)
 	s.stats.key, s.stats.at, s.stats.body = key, now, res

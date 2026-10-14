@@ -20,10 +20,17 @@
   </nav>
 </header>
 <main class="stats-page">
-  <section class="panel chart-panel" id="c5" aria-label="5-hour limit"></section>
-  <section class="panel chart-panel" id="c7" aria-label="weekly limit"></section>
+  <h2>Codex</h2>
+  <section id="codex-limits" class="stats-page" aria-label="Codex account limits" aria-live="polite"><p class="meta">Loading Codex account usage…</p></section>
+  <section id="claude-limits" class="stats-page" aria-label="Claude account limits">
+    <h2 class="provider-badge"><img class="provider-logo" src="icons/claude.svg" alt="" width="16" height="16">Claude Code</h2>
+    <p class="meta">Claude account usage from status-line readings.</p>
+    <section class="panel chart-panel" id="c5" aria-label="5-hour limit"></section>
+    <section class="panel chart-panel" id="c7" aria-label="weekly limit"></section>
+  </section>
 </main>
 <div class="scanlines" aria-hidden="true"></div>
 <script src="limits.js"></script>
+<script src="codex-limits.js"></script>
 </body>
 </html>

@@ -38,6 +38,10 @@ func envelope(source, kind string, payload json.RawMessage) model.Envelope {
 }
 
 func report(kind string, args []string, stderr io.Writer) int {
+	return reportFor(kind, args, stderr, "")
+}
+
+func reportFor(kind string, args []string, stderr io.Writer, provider string) int {
 	p := cliPayload{}
 	p.Cwd, _ = os.Getwd()
 	switch kind {
@@ -64,7 +68,15 @@ func report(kind string, args []string, stderr io.Writer) int {
 		p.I, p.N = i, n
 	}
 	b, _ := json.Marshal(p)
-	send(envelope(model.SourceCLI, kind, b))
+	e := envelope(model.SourceCLI, kind, b)
+	if provider == model.ProviderCodex {
+		e.Provider, e.ClaudePID = provider, 0
+		// Native Codex tool environments can provide this ID. TRK_SESSION always wins.
+		if e.SessionID == "" {
+			e.SessionID = os.Getenv("CODEX_THREAD_ID")
+		}
+	}
+	send(e)
 	return 0
 }
 

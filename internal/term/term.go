@@ -1,5 +1,5 @@
 // Package term runs agents in pseudo-terminals for the dashboard's agent drawer: each
-// terminal is a `claude` process on a pty whose output is kept in a capped scrollback
+// terminal is a Claude or Codex process whose output is kept in a capped scrollback
 // and fanned out to any number of attached viewers.
 package term
 
@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/GujaLomsadze/trk/internal/codex"
 )
 
 const (
@@ -23,30 +26,32 @@ const (
 	MaxRunning    = 16        // live terminals at once; each one is a whole claude
 )
 
-// ErrUnsupported: this platform has no pty support (native Windows).
+// ErrUnsupported: this platform has no usable pseudo-terminal support.
 var ErrUnsupported = errors.New("terminals are not supported on this platform")
 
 // Spec says what to run. Resume continues an existing conversation by session id;
 // Fork (with Resume) continues a copy of it under a new id, leaving the original alone.
 type Spec struct {
-	Dir    string `json:"dir"`
-	Prompt string `json:"prompt"`
-	Resume string `json:"resume,omitempty"`
-	Fork   bool   `json:"fork,omitempty"`
-	Title  string `json:"title,omitempty"` // card title for the session it starts (the daemon applies it)
+	Provider string `json:"provider,omitempty"`
+	Dir      string `json:"dir"`
+	Prompt   string `json:"prompt"`
+	Resume   string `json:"resume,omitempty"`
+	Fork     bool   `json:"fork,omitempty"`
+	Title    string `json:"title,omitempty"` // card title for the session it starts (the daemon applies it)
 }
 
 var sessionID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 
 // Info is what the dashboard lists.
 type Info struct {
-	ID     string `json:"id"`
-	Dir    string `json:"dir"`
-	Name   string `json:"name"`
-	Prompt string `json:"prompt,omitempty"`
-	Resume string `json:"resume,omitempty"` // session id it was started to resume or fork
-	Fork   bool   `json:"fork,omitempty"`
-	Title  string `json:"title,omitempty"`
+	Provider string `json:"provider"`
+	ID       string `json:"id"`
+	Dir      string `json:"dir"`
+	Name     string `json:"name"`
+	Prompt   string `json:"prompt,omitempty"`
+	Resume   string `json:"resume,omitempty"` // session id it was started to resume or fork
+	Fork     bool   `json:"fork,omitempty"`
+	Title    string `json:"title,omitempty"`
 	// SessionID is the Claude session running in it, once its hooks have reported one
 	// (the daemon links it by process id). Kept after the process exits.
 	SessionID string `json:"session_id,omitempty"`
@@ -56,15 +61,25 @@ type Info struct {
 }
 
 type Manager struct {
-	Command  string // program to run; "claude" unless a test swaps it
-	OnChange func() // called (without locks held) when a terminal starts, exits or is removed
-	mu       sync.Mutex
-	terms    map[string]*Term
+	Command      string // program to run; "claude" unless a test swaps it
+	CodexCommand string // optional executable override, primarily for tests
+	OnChange     func() // called (without locks held) when a terminal starts, exits or is removed
+	mu           sync.Mutex
+	startMu      sync.Mutex // reserve the running limit across concurrent launches
+	terms        map[string]*Term
 }
 
 func NewManager() *Manager { return &Manager{Command: "claude", terms: map[string]*Term{}} }
 
 func (m *Manager) Start(sp Spec) (*Term, error) {
+	m.startMu.Lock()
+	defer m.startMu.Unlock()
+	if sp.Provider == "" {
+		sp.Provider = "claude"
+	}
+	if sp.Provider != "claude" && sp.Provider != "codex" {
+		return nil, errors.New("unknown agent provider")
+	}
 	dir := filepath.Clean(sp.Dir)
 	if sp.Dir == "" || !filepath.IsAbs(dir) {
 		return nil, errors.New("folder must be an absolute path")
@@ -81,23 +96,35 @@ func (m *Manager) Start(sp Spec) (*Term, error) {
 	if m.Running() >= MaxRunning {
 		return nil, fmt.Errorf("%d agents are already running in TRK; stop one first", MaxRunning)
 	}
-	cmd := exec.Command(m.Command, args(sp)...)
+	command := m.Command
+	if sp.Provider == "codex" {
+		command = m.CodexCommand
+		if command == "" {
+			var err error
+			command, err = codex.Executable()
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	id := newID()
+	cmd := exec.Command(command, args(sp)...)
 	cmd.Dir = dir
-	cmd.Env = append(CleanEnv(), "TERM=xterm-256color", "COLORTERM=truecolor")
+	cmd.Env = append(CleanEnv(), "TERM=xterm-256color", "COLORTERM=truecolor", "TRK_TERMINAL_ID="+id)
 	f, err := startPty(cmd, 120, 32)
 	if errors.Is(err, exec.ErrNotFound) {
-		return nil, fmt.Errorf("%s is not on TRK's PATH; start TRK from a shell where `%s` works (trk stop, then trk open)", m.Command, m.Command)
+		return nil, fmt.Errorf("%s is not on TRK's PATH; start TRK from a shell where `%s` works (trk stop, then trk open)", command, command)
 	}
 	if err != nil {
 		return nil, err
 	}
 	t := &Term{
-		info: Info{ID: newID(), Dir: dir, Name: filepath.Base(dir), Prompt: strings.TrimSpace(sp.Prompt),
-			Resume: sp.Resume, Fork: sp.Fork, Title: sp.Title, Started: time.Now().UnixMilli(), PID: cmd.Process.Pid},
-		cmd: cmd, f: f, subs: map[chan []byte]struct{}{}, ring: ring{max: scrollbackMax},
+		info: Info{ID: id, Provider: sp.Provider, Dir: dir, Name: filepath.Base(dir), Prompt: strings.TrimSpace(sp.Prompt),
+			Resume: sp.Resume, Fork: sp.Fork, Title: sp.Title, Started: time.Now().UnixMilli(), PID: f.Pid()},
+		f: f, subs: map[chan []byte]struct{}{}, ring: ring{max: scrollbackMax},
 	}
 	if sp.Resume != "" && !sp.Fork {
-		t.info.SessionID = sp.Resume // a fork gets its new id from its first hook event
+		t.info.SessionID = sp.SessionKey() // a fork gets its new id from its first hook event
 	}
 	m.mu.Lock()
 	m.terms[t.info.ID] = t
@@ -107,8 +134,23 @@ func (m *Manager) Start(sp Spec) (*Term, error) {
 	return t, nil
 }
 
-// args builds claude's argv (no shell involved); the first prompt is a single entry.
+// args builds provider-specific argv; prompts never become shell expressions.
 func args(sp Spec) []string {
+	if sp.Provider == "codex" {
+		a := []string{"--no-daemon"}
+		if sp.Resume != "" {
+			if sp.Fork {
+				a = append(a, "fork")
+			} else {
+				a = append(a, "resume")
+			}
+			a = append(a, sp.Resume)
+		}
+		if p := strings.TrimSpace(sp.Prompt); p != "" {
+			a = append(a, "--", p)
+		}
+		return a
+	}
 	var a []string
 	if sp.Resume != "" {
 		a = append(a, "--resume", sp.Resume)
@@ -120,6 +162,31 @@ func args(sp Spec) []string {
 		a = append(a, p)
 	}
 	return a
+}
+
+func (sp Spec) SessionKey() string {
+	if sp.Resume == "" {
+		return ""
+	}
+	if sp.Provider == "codex" {
+		return "codex:" + sp.Resume
+	}
+	return sp.Resume
+}
+
+// LinkCodex binds only the first root session; subagents cannot replace it.
+func (m *Manager) LinkCodex(id, sid string) bool {
+	t, ok := m.Get(id)
+	if !ok || !strings.HasPrefix(sid, "codex:") {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.info.Exited || t.info.Provider != "codex" || t.info.SessionID != "" {
+		return false
+	}
+	t.info.SessionID = sid
+	return true
 }
 
 // Link records which Claude session runs in terminal id. It reports whether that changed.
@@ -215,8 +282,7 @@ func (m *Manager) changed() {
 }
 
 type Term struct {
-	cmd  *exec.Cmd
-	f    *os.File
+	f    terminalProcess
 	mu   sync.Mutex
 	info Info
 	ring ring
@@ -228,6 +294,13 @@ func (t *Term) Info() Info {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.info
+}
+
+type terminalProcess interface {
+	io.ReadWriteCloser
+	Pid() int
+	Wait() error
+	Resize(uint16, uint16) error
 }
 
 // Attach returns the scrollback so far and a channel of new output. The channel is
@@ -255,7 +328,12 @@ func (t *Term) Attach() (scrollback []byte, out <-chan []byte, detach func()) {
 
 func (t *Term) Write(p []byte) error { _, err := t.f.Write(p); return err }
 
-func (t *Term) Resize(cols, rows uint16) error { return resizePty(t.f, cols, rows) }
+func (t *Term) Resize(cols, rows uint16) error {
+	if cols == 0 || rows == 0 || cols > 32767 || rows > 32767 {
+		return errors.New("invalid terminal dimensions")
+	}
+	return t.f.Resize(cols, rows)
+}
 
 // pump copies pty output into the scrollback and to every viewer until the process ends.
 func (t *Term) pump(changed func()) {
@@ -280,7 +358,8 @@ func (t *Term) pump(changed func()) {
 			break
 		}
 	}
-	_ = t.cmd.Wait()
+	_ = t.f.Wait()
+	_ = t.f.Close()
 	t.mu.Lock()
 	t.done, t.info.Exited = true, true
 	for ch := range t.subs {
@@ -292,9 +371,6 @@ func (t *Term) pump(changed func()) {
 }
 
 func (t *Term) kill() {
-	if t.cmd.Process != nil {
-		_ = t.cmd.Process.Kill()
-	}
 	_ = t.f.Close()
 }
 
@@ -306,7 +382,8 @@ func CleanEnv() []string {
 	out := []string{}
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
-		if k == "CLAUDECODE" || k == "CLAUDE_PID" || k == "CLAUDE_EFFORT" || strings.HasPrefix(k, "CLAUDE_CODE_") {
+		k = strings.ToUpper(k)
+		if k == "CLAUDECODE" || k == "CLAUDE_PID" || k == "CLAUDE_EFFORT" || strings.HasPrefix(k, "CLAUDE_CODE_") || k == "CODEX_THREAD_ID" || k == "CODEX_SESSION_ID" || k == "CODEX_APP_TOOLS_PIPE_PATH" || k == "CODEX_INTERNAL_ORIGINATOR_OVERRIDE" || k == "TRK_SESSION" || k == "TRK_TERMINAL_ID" || k == "TERM" || k == "COLORTERM" {
 			continue
 		}
 		out = append(out, kv)

@@ -25,6 +25,9 @@ func Describe(tool string, input json.RawMessage, cwd string) (summary, key, fil
 			key = ""
 		}
 		return trunc(summary), key, "", false
+	case "apply_patch":
+		summary = "patch"
+		edit = true
 	case "Edit", "Write", "MultiEdit", "Read", "NotebookEdit", "NotebookRead":
 		p := str("file_path")
 		if p == "" {
@@ -64,10 +67,30 @@ func Category(tool string) string {
 	switch tool {
 	case "Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "NotebookRead":
 		return "read"
-	case "Edit", "Write", "MultiEdit", "NotebookEdit":
+	case "Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch":
 		return "edit"
 	}
 	return "run"
+}
+
+// ResolveFiles handles both Windows drive paths and Unix paths, even during cross-OS replay.
+func ResolveFiles(files []string, cwd string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range files {
+		f = NormPath(f)
+		if f == "" {
+			continue
+		}
+		if !strings.HasPrefix(f, "/") && !(len(f) > 2 && f[1] == ':') {
+			f = path.Join(NormPath(cwd), f)
+		}
+		if !seen[f] {
+			out = append(out, f)
+			seen[f] = true
+		}
+	}
+	return out
 }
 
 func rel(p, cwd string) string {

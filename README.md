@@ -16,6 +16,39 @@ Binaries for Linux, macOS and Windows on amd64 and arm64 are on the [releases pa
 
 ## Quick start
 
+### Windows desktop app
+
+Double-click `dist/desktop/win-unpacked/TRK.exe` to open TRK in its own window.
+It starts the bundled tracker automatically. Keep the entire app folder together,
+or use `dist/desktop/TRK Setup 0.1.0.exe` to install it with Desktop and Start menu
+shortcuts. Closing the window keeps the tracker and running agents alive.
+See [desktop build instructions](desktop/README.md) to produce these files.
+
+#### Build or update the Windows installer
+
+Install Node.js 22.12 or newer and the Go version specified in `go.mod`.
+For the first build, run these PowerShell commands from the repository root:
+
+```powershell
+cd desktop
+npm ci
+npm run dist:win
+```
+
+After changing Go code, dashboard files, or Electron code, run `npm run dist:win`
+again from `desktop/`. It recompiles the Go backend, bundles the dashboard, and
+generates `dist/desktop/TRK Setup 0.1.0.exe` relative to the repository root.
+No separate `go build` is needed. Run `npm ci` again if dependency files change.
+
+To apply the update:
+
+1. Use the dashboard's power button to stop TRK. This also stops agents launched by TRK.
+2. Close the desktop app; closing its window alone does not stop the backend.
+3. Run the newly generated installer.
+4. Launch TRK from its Desktop or Start menu shortcut to use the updated backend.
+
+### Command line
+
 ```sh
 trk init --dry-run   # preview exactly what would change (writes nothing)
 trk init     # add hooks + status line to ~/.claude/settings.json, add a CLAUDE.md block
@@ -27,6 +60,28 @@ Worried about your Claude setup? Read [How TRK works with Claude Code](#how-trk-
 
 You never need to run `trk serve` yourself: the first `trk` call that finds no daemon starts one in the background.
 
+### Codex
+
+This checkout also supports passive tracking through Codex hooks (verified CLI surface: 0.162.1). Build this checkout to use the integration:
+
+```sh
+go build -o bin/trk ./cmd/trk  # on Windows: -o bin/trk.exe
+bin/trk init --agent codex --dry-run
+bin/trk init --agent codex
+# Restart Codex and review/trust the TRK entries in /hooks.
+bin/trk open
+```
+
+The installer merges `$CODEX_HOME/hooks.json` (default `~/.codex/hooks.json`), preserves other handlers, and backs up changed files. It leaves Codex trust and `config.toml` to Codex. To add optional progress instructions to a chosen file, pass `--agents-md /path/to/AGENTS.md`; no instruction file is edited by default.
+
+Codex cards report prompts, replies, tool activity, permission waits, interruptions, and patch files alongside Claude cards. Fleet cards and Stats have provider filters. Session context, tokens, and cost are unavailable from this hook adapter; missing readings appear as unavailable, and mixed totals are partial. Codex sessions launched outside TRK remain externally owned; their drawer offers a resume command to copy. Use **+ Agent → Codex** to start an embedded terminal.
+
+The **Limits** page shows Codex account quota usage and reset times above the Claude charts, with both accounts visible together. TRK uses a short-lived App Server connection and the read-only `account/rateLimits/read` method, cached for one minute while viewed. It displays the actual returned windows and marks missing/stale readings; Codex usage history and pace projections are not yet collected. The **Claude Code** section retains the existing charts. If the CLI is not found, set `TRK_CODEX_COMMAND` to its native executable and restart TRK. No additional hook trust or API key is needed when Codex is already signed in with ChatGPT.
+
+For declared progress, use `trk codex start "task" --steps 3`, `trk codex step "testing"`, `trk codex progress 2/3`, `trk codex blocked "question"`, and `trk codex done "result"`. `TRK_SESSION` selects an explicit native ID; otherwise `CODEX_THREAD_ID` is used when present. Directory matching is best effort and does not choose between multiple matching Codex sessions.
+
+See the [implementation plan and validation record](docs/codex-support-plan.md) and [project guide](PROJECT_GUIDE.md). Local desktop hook delivery has now been observed. Codex's automatic next-message suggestion forks are excluded from cards and statistics using their specific app-generated prompt preamble; real user chats and forks remain separate. Their raw history is preserved. Broader lifecycle, IDE, and cloud coverage still need separate validation.
+
 ## The dashboard
 
 Three pages, all at `http://localhost:7777`:
@@ -37,9 +92,9 @@ Three pages, all at `http://localhost:7777`:
 
 ## Agents in the dashboard
 
-TRK can also run Claude for you, in a terminal inside the dashboard. It's off until you turn it on in **⚙ Card layout → Terminals** (not available on native Windows; WSL works).
+TRK can run Claude or Codex in a terminal inside the dashboard. Enable **⚙ Card layout → Terminals** once. Unix/WSL uses PTYs; Windows 10/11 uses ConPTY and requires native agent executables.
 
-- **+ Agent** opens the New agent form: a folder, an optional name for its card, and an optional first prompt. Claude runs in a terminal owned by TRK. Closing the drawer keeps it running; **Pop out ↗** moves it to its own window; **A− / A+** sets the terminal's font size.
+- **+ Agent** opens the New agent form: choose **Claude Code** or **Codex**, a folder, an optional card name, and an optional first prompt. The selected agent runs in a terminal owned by TRK. Codex uses standalone mode (`--no-daemon`), preserving normal approval and hook-trust prompts; it never takes over the shared Codex daemon. Closing the drawer keeps it running; **Pop out ↗** moves it to its own window; **A− / A+** sets the terminal's font size.
 - **Click any card** to open its drawer:
   - running in TRK: its terminal.
   - running in another terminal (a tab, your editor): **Fork into TRK** continues a copy of the conversation (`claude --resume <id> --fork-session`) and leaves the original alone. **Take over** stays off while that claude runs, so two claudes never write to one conversation.

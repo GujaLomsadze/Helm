@@ -25,6 +25,8 @@ const (
 // Meta describes a session for display and filtering.
 type Meta struct {
 	Name, Repo, Model, Cwd string
+	Provider               string
+	Background             bool
 }
 
 // Input is everything Compute needs. Rows cover [PrevSince, Until): the extra period before
@@ -39,6 +41,7 @@ type Input struct {
 	Days             int
 	TZOffsetMin      int             // browser's getTimezoneOffset(): UTC minus local, minutes
 	Repos            map[string]bool // only these repos; nil = all
+	Provider         string
 }
 
 type Result struct {
@@ -66,16 +69,19 @@ type RepoTotal struct {
 }
 
 type KPI struct {
-	Spend      float64            `json:"spend"`
-	SpendPrev  float64            `json:"spend_prev"`
-	Tokens     float64            `json:"tokens"`
-	ByModel    map[string]float64 `json:"tokens_by_model"`
-	AgentHours float64            `json:"agent_hours"`
-	PeakAgents int                `json:"peak_agents"`
-	WaitMedian float64            `json:"wait_median"` // seconds; 0 when no waits
-	WaitP90    float64            `json:"wait_p90"`
-	ToolCalls  int                `json:"tool_calls"`
-	ToolFails  int                `json:"tool_fails"`
+	UnknownCostSessions int                `json:"unknown_cost_sessions"`
+	KnownCostSessions   int                `json:"known_cost_sessions"`
+	KnownTokenSessions  int                `json:"known_token_sessions"`
+	Spend               float64            `json:"spend"`
+	SpendPrev           float64            `json:"spend_prev"`
+	Tokens              float64            `json:"tokens"`
+	ByModel             map[string]float64 `json:"tokens_by_model"`
+	AgentHours          float64            `json:"agent_hours"`
+	PeakAgents          int                `json:"peak_agents"`
+	WaitMedian          float64            `json:"wait_median"` // seconds; 0 when no waits
+	WaitP90             float64            `json:"wait_p90"`
+	ToolCalls           int                `json:"tool_calls"`
+	ToolFails           int                `json:"tool_fails"`
 }
 
 type Tool struct {
@@ -100,21 +106,25 @@ type File struct {
 }
 
 type Session struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Repo    string   `json:"repo"`
-	Model   string   `json:"model"`
-	First   int64    `json:"first"`
-	Last    int64    `json:"last"`
-	Spend   float64  `json:"spend"`
-	Tokens  float64  `json:"tokens"`
-	ModelMs int64    `json:"model_ms"`
-	ToolMs  int64    `json:"tool_ms"`
-	WaitMs  int64    `json:"wait_ms"`
-	PeakCtx *float64 `json:"peak_ctx,omitempty"`
+	Provider    string   `json:"provider"`
+	CostKnown   bool     `json:"cost_known"`
+	TokensKnown bool     `json:"tokens_known"`
+	TimeKnown   bool     `json:"time_known"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Repo        string   `json:"repo"`
+	Model       string   `json:"model"`
+	First       int64    `json:"first"`
+	Last        int64    `json:"last"`
+	Spend       float64  `json:"spend"`
+	Tokens      float64  `json:"tokens"`
+	ModelMs     int64    `json:"model_ms"`
+	ToolMs      int64    `json:"tool_ms"`
+	WaitMs      int64    `json:"wait_ms"`
+	PeakCtx     *float64 `json:"peak_ctx,omitempty"`
 }
 
-var editTools = map[string]bool{"Edit": true, "MultiEdit": true, "Write": true, "NotebookEdit": true}
+var editTools = map[string]bool{"Edit": true, "MultiEdit": true, "Write": true, "NotebookEdit": true, "apply_patch": true}
 
 // Compute builds the Stats page from in.
 func Compute(in Input) Result {
@@ -140,7 +150,9 @@ func Compute(in Input) Result {
 		}
 		return "other"
 	}
-	keep := func(sid string) bool { return in.Repos == nil || in.Repos[repoOf(sid)] }
+	keep := func(sid string) bool {
+		return (in.Provider == "" || in.Meta[sid].Provider == in.Provider) && (in.Repos == nil || in.Repos[repoOf(sid)])
+	}
 
 	type acc struct {
 		Session
@@ -152,7 +164,7 @@ func Compute(in Input) Result {
 		a := sess[sid]
 		if a == nil {
 			m := in.Meta[sid]
-			a = &acc{Session: Session{ID: sid, Name: m.Name, Repo: repoOf(sid), Model: m.Model}}
+			a = &acc{Session: Session{ID: sid, Name: m.Name, Repo: repoOf(sid), Model: m.Model, Provider: m.Provider}}
 			if a.Name == "" {
 				a.Name = a.Repo
 			}
@@ -184,22 +196,44 @@ func Compute(in Input) Result {
 
 	for _, r := range in.Rows {
 		sid := r.Session
+		if in.Meta[sid].Background {
+			continue
+		}
 		inRange := r.TS >= in.Since
 		if r.Kind == "status" && r.HasStatus {
 			prev := last[sid]
-			last[sid] = r
-			dCost, dAPI, dTok := grow(prev.Cost, r.Cost), grow(prev.APIMs, r.APIMs), grow(prev.Tokens, r.Tokens)
+			// Legacy in-memory callers set HasStatus alone; SQL rows carry per-field presence.
+			legacy := !r.HasCost && !r.HasAPI && !r.HasTokens
+			dCost, dAPI, dTok := 0.0, 0.0, 0.0
+			if r.HasCost || legacy {
+				dCost = grow(prev.Cost, r.Cost)
+				prev.Cost = r.Cost
+			}
+			if r.HasAPI || legacy {
+				dAPI = grow(prev.APIMs, r.APIMs)
+				prev.APIMs = r.APIMs
+			}
+			if r.HasTokens || legacy {
+				dTok = grow(prev.Tokens, r.Tokens)
+				prev.Tokens = r.Tokens
+			}
+			last[sid] = prev
 			if !inRange {
 				if keep(sid) {
 					res.KPI.SpendPrev += dCost
 				}
 				continue
 			}
-			repoSpend[repoOf(sid)] += dCost
+			if in.Provider == "" || in.Meta[sid].Provider == in.Provider {
+				repoSpend[repoOf(sid)] += dCost
+			}
 			if !keep(sid) {
 				continue
 			}
 			a := get(sid)
+			a.CostKnown = a.CostKnown || r.HasCost || legacy
+			a.TokensKnown = a.TokensKnown || r.HasTokens || legacy
+			a.TimeKnown = a.TimeKnown || r.HasAPI || legacy
 			a.Spend += dCost
 			a.Tokens += dTok
 			a.ModelMs += int64(dAPI)
@@ -246,7 +280,7 @@ func Compute(in Input) Result {
 				a.WaitMs += min(w, maxSpanMs)
 				delete(waitFrom, sid)
 			}
-		case "session_end":
+		case "session_end", "stop", "interrupt":
 			delete(waitFrom, sid)
 		}
 		switch r.Kind {
@@ -264,10 +298,14 @@ func Compute(in Input) Result {
 				cmd = CommandKey(r.Command)
 			}
 			if r.ToolUseID != "" {
-				open[r.ToolUseID] = pending{ts: r.TS, tool: r.Tool, cmd: cmd}
+				open[sid+"\x00"+r.ToolUseID] = pending{ts: r.TS, tool: r.Tool, cmd: cmd}
 			}
-			if r.File != "" {
-				f := relPath(r.File, in.Meta[sid].Cwd)
+			paths := r.Files
+			if len(paths) == 0 && r.File != "" {
+				paths = []string{r.File}
+			}
+			for _, file := range derive.ResolveFiles(paths, in.Meta[sid].Cwd) {
+				f := relPath(file, in.Meta[sid].Cwd)
 				fa := files[f]
 				if fa == nil {
 					fa = &fileAcc{agents: map[string]bool{}}
@@ -281,7 +319,7 @@ func Compute(in Input) Result {
 				fa.agents[sid] = true
 			}
 		case "tool_post", "tool_fail":
-			p, ok := open[r.ToolUseID]
+			p, ok := open[sid+"\x00"+r.ToolUseID]
 			if !ok {
 				if r.Kind == "tool_fail" && tools[r.Tool] != nil {
 					tools[r.Tool].Fails++
@@ -289,7 +327,7 @@ func Compute(in Input) Result {
 				}
 				continue
 			}
-			delete(open, r.ToolUseID)
+			delete(open, sid+"\x00"+r.ToolUseID)
 			d := r.TS - p.ts
 			a.ToolMs += min(d, maxSpanMs)
 			if p.cmd != "" {
@@ -368,6 +406,14 @@ func Compute(in Input) Result {
 	res.Files = res.Files[:min(len(res.Files), topN)]
 
 	for _, a := range sess {
+		if a.CostKnown {
+			res.KPI.KnownCostSessions++
+		} else {
+			res.KPI.UnknownCostSessions++
+		}
+		if a.TokensKnown {
+			res.KPI.KnownTokenSessions++
+		}
 		if a.seen {
 			res.Sessions = append(res.Sessions, a.Session)
 		}
