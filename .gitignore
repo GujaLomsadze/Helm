@@ -6,3 +6,5 @@ dist/
 *.db-shm
 .superpowers/
 bin/
+desktop/node_modules/
+desktop/resources/

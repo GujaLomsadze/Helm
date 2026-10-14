@@ -1,0 +1,13 @@
+"use strict";
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+const root = path.resolve(__dirname, "../..");
+const dest = path.join(root, "desktop", "resources");
+fs.mkdirSync(dest, { recursive: true });
+const windowsGo = path.join(process.env.ProgramFiles || "C:\\Program Files", "Go", "bin", "go.exe");
+const go = process.env.TRK_GO || (process.platform === "win32" && fs.existsSync(windowsGo) ? windowsGo : "go");
+const output = path.join(dest, process.platform === "win32" ? "trk.exe" : "trk");
+const result = spawnSync(go, ["build", "-trimpath", "-ldflags=-s -w", "-o", output, "./cmd/trk"], { cwd: root, stdio: "inherit", windowsHide: true });
+if (result.error) console.error(result.error.message);
+process.exit(result.status ?? 1);

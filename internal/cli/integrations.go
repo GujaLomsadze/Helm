@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"runtime"
 	"time"
@@ -28,6 +29,24 @@ func hook(stdin io.Reader) int {
 		return 0
 	}
 	send(envelope(model.SourceHook, "", b))
+	return 0
+}
+
+func codexHook(stdin io.Reader, stdout io.Writer) int {
+	b := readStdin(stdin)
+	var p struct {
+		SessionID string `json:"session_id"`
+		Event     string `json:"hook_event_name"`
+	}
+	if json.Unmarshal(b, &p) != nil || p.SessionID == "" {
+		return 0
+	}
+	// Stop handlers expect JSON; an empty object has no steering/context output.
+	if p.Event == "Stop" || p.Event == "SubagentStop" {
+		fmt.Fprintln(stdout, "{}")
+	}
+	e := model.Envelope{TS: nowMS(), Source: model.SourceHook, Provider: model.ProviderCodex, Payload: b, TerminalID: os.Getenv("TRK_TERMINAL_ID")}
+	send(e)
 	return 0
 }
 

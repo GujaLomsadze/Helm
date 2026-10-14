@@ -74,6 +74,7 @@ const groupOf = (repo) => palette.find((g) => g.members.includes(repo));
 async function load() {
   $("state").textContent = "○ loading";
   const q = new URLSearchParams({ days, tz: new Date().getTimezoneOffset() });
+  if ($("provider-filter").value) q.set("provider", $("provider-filter").value);
   if (repoOff.size) q.set("repos", palette.filter((g) => !repoOff.has(g.key)).flatMap((g) => g.members).join(","));
   try {
     const r = await fetch("/v1/stats?" + q);
@@ -136,9 +137,9 @@ function drawKpis() {
   const waitMin = Math.floor(k.wait_median / 60), waitSec = Math.round(k.wait_median % 60);
   const failPct = k.tool_calls ? (k.tool_fails / k.tool_calls) * 100 : 0;
   $("kpis").replaceChildren(
-    kpi("spend", big(k.spend >= 100 ? "$" + Math.round(k.spend) : money(k.spend)),
+    kpi(k.unknown_cost_sessions ? "reported spend · partial" : "spend", big(k.known_cost_sessions === 0 ? "—" : k.spend >= 100 ? "$" + Math.round(k.spend) : money(k.spend)),
       change == null ? (days === 1 ? "today so far" : "no spend in the " + days + " days before") : [h("b", null, (change >= 0 ? "+" : "") + change + "%"), " vs the " + days + " days before"], spark),
-    kpi("tokens", big(tok(k.tokens)), modelLine),
+    kpi(k.known_token_sessions < res.sessions.length ? "reported tokens · partial" : "tokens", big(k.known_token_sessions === 0 ? "—" : tok(k.tokens)), modelLine),
     kpi("agent hours", big(k.agent_hours >= 10 ? Math.round(k.agent_hours) : k.agent_hours.toFixed(1), "h"), [h("b", null, String(k.peak_agents)), " agent" + (k.peak_agents === 1 ? "" : "s") + " at once at peak"]),
     kpi("you answer in", k.wait_median ? big(waitMin ? waitMin + "m" : waitSec + "s", waitMin ? String(waitSec).padStart(2, "0") + "s" : null) : big("—"),
       res.waits.length ? ["median · slowest 10% ", h("b", null, dur(k.wait_p90) + "+")] : "no prompts waited on you"),
@@ -148,6 +149,11 @@ function drawKpis() {
 function width(id, min) { return Math.max(min, $(id).clientWidth || min); }
 
 function drawSpend() {
+  if (res.kpi.known_cost_sessions === 0) {
+    $("spend").replaceChildren(none("No cost readings reported in this range."));
+    $("spend-legend").replaceChildren();
+    return;
+  }
   const groups = palette.filter((g) => !repoOff.has(g.key));
   const byGroup = (d, g) => g.members.reduce((a, m) => a + (d.spend[m] || 0), 0);
   const totals = res.days.map((d) => groups.reduce((a, g) => a + byGroup(d, g), 0));
@@ -198,17 +204,17 @@ function drawSplit() {
   const rows = res.sessions.filter((s) => s.model_ms + s.tool_ms + s.wait_ms > 0)
     .sort((a, b) => (b.model_ms + b.tool_ms + b.wait_ms) - (a.model_ms + a.tool_ms + a.wait_ms)).slice(0, 6);
   if (!rows.length) return $("split").replaceChildren(none("No session time recorded in this range."));
-  const row = (name, m, t, w, cls) => {
+  const row = (name, m, t, w, cls, known = true) => {
     const all = m + t + w || 1;
     const bar = h("div", { class: "st-sbar" }, h("i", { style: `width:${(m / all) * 100}%;background:var(--t-model)` }),
       h("i", { style: `width:${(t / all) * 100}%;background:var(--t-tools)` }), h("i", { style: `width:${(w / all) * 100}%;background:var(--t-wait)` }));
-    hover(bar, () => [h("div", null, name), trow(css("--t-model"), "model working", dur(m / 1000)), trow(css("--t-tools"), "tools running", dur(t / 1000)),
+    hover(bar, () => [h("div", null, name), trow(css("--t-model"), "model working", known ? dur(m / 1000) : "not fully reported"), trow(css("--t-tools"), "tools running", dur(t / 1000)),
       trow(css("--t-wait"), "waiting on you", dur(w / 1000))]);
-    return h("div", { class: "st-srow " + (cls || "") }, h("span", { class: "one", title: name }, name), bar, h("span", { class: "v" }, Math.round((w / all) * 100) + "% you"));
+    return h("div", { class: "st-srow " + (cls || "") }, h("span", { class: "one", title: name }, name), bar, h("span", { class: "v" }, known ? Math.round((w / all) * 100) + "% you" : "partial"));
   };
   const sum = (k) => res.sessions.reduce((a, s) => a + s[k], 0);
-  $("split").replaceChildren(...rows.map((s) => row(label(s), s.model_ms, s.tool_ms, s.wait_ms)),
-    row("All sessions", sum("model_ms"), sum("tool_ms"), sum("wait_ms"), "total"));
+  $("split").replaceChildren(...rows.map((s) => row(label(s), s.model_ms, s.tool_ms, s.wait_ms, "", s.time_known !== false)),
+    row("All sessions", sum("model_ms"), sum("tool_ms"), sum("wait_ms"), "total", res.sessions.every(s => s.time_known !== false)));
 }
 
 function drawWaits() {
@@ -345,10 +351,10 @@ function drawSessions() {
   sortable($("sessions"), [["Session", "name"], ["Started", "first"], ["Repo", "repo"], ["Model", "model"], ["Duration", "duration", "num"], ["Cost", "spend", "num"],
     ["Tokens", "tokens", "num"], ["Waiting on you", "waitShare", "num"], ["Peak context", "peak_ctx", "num"]], rows, sesSort, (s) => {
     const g = groupOf(s.repo);
-    return h("tr", null, h("td", { title: s.id }, s.name), h("td", null, when(s.first)),
+    return h("tr", null, h("td", { title: s.id }, (s.provider ? s.provider + " · " : "") + s.name), h("td", null, when(s.first)),
       h("td", null, h("i", { class: "st-sw", style: "background:var(" + (g ? g.color : "--r-other") + ");margin-right:6px" }), s.repo),
-      h("td", null, s.model || "—"), h("td", { class: "num" }, dur(s.duration / 1000)), h("td", { class: "num" }, money(s.spend)), h("td", { class: "num" }, tok(s.tokens)),
-      h("td", { class: "num" }, Math.round(s.waitShare * 100) + "%"),
+      h("td", null, s.model || "—"), h("td", { class: "num" }, dur(s.duration / 1000)), h("td", { class: "num" }, s.cost_known === false ? "—" : money(s.spend)), h("td", { class: "num" }, s.tokens_known === false ? "—" : tok(s.tokens)),
+      h("td", { class: "num" }, s.time_known === false ? "partial" : Math.round(s.waitShare * 100) + "%"),
       h("td", { class: "num", style: s.peak_ctx != null ? "color:" + ctxColor(s.peak_ctx) : null }, s.peak_ctx != null ? Math.round(s.peak_ctx) + "%" : "—"));
   }, (k) => { sesSort = [k, sesSort[0] === k ? -sesSort[1] : -1]; drawSessions(); });
 }
@@ -359,3 +365,5 @@ setInterval(() => { if (tip.hidden) load(); }, 60e3); // history: a refresh a mi
 let rz;
 addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => res && render(), 120); });
 addEventListener("scroll", hideTip, { passive: true });
+
+$("provider-filter").addEventListener("change", () => { repoOff.clear(); load(); });

@@ -71,6 +71,14 @@ func Run(ctx context.Context, o Options) error {
 	if v, ok, err := st.Setting(settingTerminals); err == nil && ok {
 		srv.SetTerminals(v == "true")
 	}
+	if err := st.RecoverScheduleRuns(time.Now().UnixMilli()); err != nil {
+		ln.Close()
+		return fmt.Errorf("recover scheduled tasks: %w", err)
+	}
+	schedulerCtx, stopScheduler := context.WithCancel(ctx)
+	schedulerDone := make(chan struct{})
+	go func() { defer close(schedulerDone); srv.schedulerLoop(schedulerCtx) }()
+	defer func() { stopScheduler(); <-schedulerDone }()
 	srv.OnShutdown = stopAll
 	srv.OnStop = func() {
 		if err := os.WriteFile(filepath.Join(o.DataDir, "paused"), []byte("paused from the dashboard\n"), 0o644); err != nil {

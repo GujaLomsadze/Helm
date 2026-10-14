@@ -72,9 +72,12 @@ const pct = (v) => (v == null ? DASH : Math.round(v) + "%");
 const money = (v) => "$" + (v || 0).toFixed(2);
 
 const CHIP = {
+  interrupted: ["INTERRUPTED", "done"],
   working: ["WORKING", "work"], waiting: ["WAITING ON YOU", "warn"], blocked: ["BLOCKED", "red"],
   looping: ["LOOPING?", "warn"], idle: ["IDLE", "done"], done: ["DONE", "ok"],
 };
+const providerName = (s) => s.provider === "codex" ? "Codex" : s.provider === "generic" ? "Other" : "Claude";
+$("provider-filter").addEventListener("change", () => render());
 const NEED_LABEL = { permission: "permission", question: "question", blocked: "blocked" };
 
 function renderHeader(v) {
@@ -84,9 +87,10 @@ function renderHeader(v) {
     h("div", { class: "stat" }, h("b", null, st.agents), h("span", null, "agents")),
     h("div", { class: "stat" }, h("b", null, st.working), h("span", null, "working")),
     h("div", { class: "stat" + (st.needs_you ? " hot" : "") }, h("b", null, st.needs_you), h("span", null, "needs you")),
-    h("div", { class: "stat" }, h("b", null, tokens(st.tokens_today)), h("span", null, "tokens today")),
+    h("div", { class: "stat" }, h("b", null, st.tokens_known === false ? DASH : tokens(st.tokens_today)), h("span", null, st.tokens_partial ? "tokens · partial" : "tokens today")),
   );
   const a = v.account || {};
+  $("limits").title = "Claude account usage; the Limits page shows both Codex and Claude account usage";
   $("limits").replaceChildren(limit("5h", a.five_h_pct, a.five_h_reset), limit("7d", a.seven_d_pct, a.seven_d_reset));
 }
 
@@ -192,7 +196,7 @@ function fitRows() {
 addEventListener("resize", fitRows);
 
 const lastTop = new Map(); // session_id -> newest tool line seen
-const mark = (st) => (st === "ok" ? "✓" : st === "fail" ? "✗" : "…");
+const mark = (st) => (st === "ok" ? "✓" : st === "fail" ? "✗" : st === "unknown" ? "?" : "…");
 
 // Each widget renders into a slot with a reserved height, so every card has the same shape.
 const RENDER = {
@@ -230,14 +234,15 @@ const RENDER = {
     : h("div", { class: "w-prompt ghost" }, h("div", { class: "w-who" }, "You"), h("div", { class: "w-txt clamp2" }, "no prompt yet")),
   // the reply is the result: shown once the agent has stopped
   reply: (s) => {
-    const stopped = s.status === "done" || s.status === "idle";
+    const stopped = s.status === "done" || s.status === "idle" || s.status === "interrupted";
     if (s.last_reply && stopped) {
-      return h("div", { class: "w-reply" }, h("div", { class: "w-who" }, "Claude"), h("div", { class: "w-txt clamp2", title: s.last_reply }, s.last_reply));
+      return h("div", { class: "w-reply" }, h("div", { class: "w-who" }, providerName(s)), h("div", { class: "w-txt clamp2", title: s.last_reply }, s.last_reply));
     }
-    return h("div", { class: "w-reply ghost" }, h("div", { class: "w-who" }, "Claude"),
+    return h("div", { class: "w-reply ghost" }, h("div", { class: "w-who" }, providerName(s)),
       h("div", { class: "w-txt clamp2" }, s.status === "working" || s.status === "looping" ? "working…" : stopped ? "no reply yet" : "waiting on you"));
   },
   lines: (s) => {
+    if (s.provider === "codex") return h("div", { class: "w-lines ghost" }, "line counts unavailable");
     const a = s.lines_added || 0, d = s.lines_removed || 0;
     const na = a + d ? Math.max(a ? 1 : 0, Math.round((a / (a + d)) * CELLS)) : 0;
     const nd = a + d ? Math.min(CELLS - na, Math.max(d ? 1 : 0, Math.round((d / (a + d)) * CELLS))) : 0;
@@ -264,8 +269,8 @@ const RENDER = {
 };
 const FOOT = {
   elapsed: (s) => h("span", { class: "live-elapsed", "data-since": s.started_at }, "elapsed " + dur(now() - s.started_at)),
-  tokens: (s) => h("span", null, tokens((s.tokens_in || 0) + (s.tokens_out || 0)) + " tok"),
-  cost: (s) => h("span", null, money(s.cost_usd)),
+  tokens: (s) => h("span", null, s.tokens_known === false ? DASH + " tok" : tokens((s.tokens_in || 0) + (s.tokens_out || 0)) + " tok"),
+  cost: (s) => h("span", { title: s.cost_known === false ? "Cost not reported" : "" }, s.cost_known === false ? DASH : money(s.cost_usd)),
   model: (s) => h("span", null, s.model || DASH),
   last: (s) => h("span", { class: "live-last", "data-since": s.last_event_at }, "last " + dur(now() - s.last_event_at)),
   calls: (s) => h("span", null, (s.tool_calls || 0) + " calls"),
@@ -273,6 +278,7 @@ const FOOT = {
 
 function card(s) {
   const [label, tone] = CHIP[s.status] || CHIP.working;
+  const logo = s.provider === "codex" ? "codex" : !s.provider || s.provider === "claude" ? "claude" : null;
   const where = [s.repo, s.branch].filter(Boolean).join(" · ") || s.cwd || "";
   // flash the newest tool line when it changes
   const top = s.recent && s.recent[0] ? s.recent[0].tool + s.recent[0].summary : "";
@@ -282,11 +288,11 @@ function card(s) {
     "aria-label": s.name + ", " + label.toLowerCase() + ". Press Enter to open its agent drawer" },
     // ✕ sits left of the name so the status chip keeps the same spot on every card
     h("div", { class: "card-head" },
-      s.status === "idle" || s.status === "done"
+      s.status === "idle" || s.status === "done" || s.status === "interrupted"
         ? h("button", { class: "dismiss", type: "button", "data-dismiss": s.session_id, "aria-label": "Hide " + s.name, title: "Hide this card (it comes back if the session gets busy again)" }, "✕")
         : null,
       h("div", { class: "head-text" }, h("h3", { class: "card-name one", title: s.auto_name ? `${s.name} (${s.auto_name})` : s.name }, s.name),
-        h("div", { class: "meta one", title: where }, s.in_trk ? h("span", { class: "in-trk", title: "Running in a TRK terminal" }, "⌨ ") : null, where || DASH)),
+        h("div", { class: "meta one", title: where }, h("span", { class: "provider-badge" }, logo ? h("img", { class: "provider-logo", src: "icons/" + logo + ".svg", alt: "", width: "16", height: "16" }) : null, providerName(s)), " · ", s.in_trk ? h("span", { class: "in-trk", title: "Running in a TRK terminal" }, "⌨ ") : null, where || DASH)),
       // WORKING: light runs through the letters (the text needs its own box for background-clip)
       h("span", { class: "chip chip-" + tone }, tone === "work" ? h("span", { class: "shine" }, label) : label)),
     layout.slots.filter((x) => x.on).map((x) => RENDER[x.id](s, fresh)),
@@ -298,10 +304,12 @@ function card(s) {
 const cards = new Map(); // session_id -> { sig, el }
 
 function renderGrid(v) {
+  const filter = $("provider-filter").value;
+  v = { ...v, sessions: v.sessions.filter((s) => !filter || (s.provider || "claude") === filter) };
   const grid = $("grid");
   if (!v.sessions.length) {
     cards.clear();
-    grid.replaceChildren(h("div", { class: "panel empty" }, "No agents yet. Start Claude Code (after `trk init`) or run `trk start \"task\"`."));
+    grid.replaceChildren(h("div", { class: "panel empty" }, "No matching agents. Set up Claude with trk init, or Codex with trk init --agent codex."));
     return;
   }
   grid.querySelector(".empty")?.remove();

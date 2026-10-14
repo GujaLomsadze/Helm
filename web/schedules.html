@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRK.EXE · Schedules</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="schedules.css">
+</head>
+<body>
+<header class="hdr panel">
+  <div class="brand">
+    <h1 class="title">TRK.EXE</h1>
+    <div class="sub">task scheduler · <span id="host"></span> <span id="state" class="conn">○ connecting</span></div>
+  </div>
+  <nav class="nav" aria-label="views">
+    <a class="btn btn-secondary" href="./">Fleet</a>
+    <a class="btn btn-secondary" href="limits.html">Limits</a>
+    <a class="btn btn-secondary" href="stats.html">Stats</a>
+    <a class="btn btn-secondary active" href="schedules.html" aria-current="page">Schedules</a>
+  </nav>
+</header>
+<main class="sc-page">
+  <div class="sc-heading"><div><h2>Scheduled tasks</h2><p class="meta">Give an agent a task. Choose when it runs.</p></div><button class="btn btn-primary" id="new-task" type="button">+ Schedule task</button></div>
+  <p class="sc-notice" id="availability" hidden></p>
+  <p class="meta">TRK must be running and your computer awake. Closing the desktop window keeps scheduling active. Missed occurrences run once when TRK returns.</p>
+  <p class="ag-err" id="page-error" role="alert"></p>
+  <div id="schedules" class="sc-list" aria-live="polite"></div>
+</main>
+<dialog class="panel sc-dialog" id="task-dialog" aria-labelledby="task-title">
+  <div class="sc-dialog-head"><h2 id="task-title">Schedule task</h2><button class="btn btn-secondary" id="close-task" type="button" aria-label="Close">✕</button></div>
+  <form id="task-form" class="ag-form sc-form">
+    <label class="ag-lab" for="task-name">Task name</label><input id="task-name" name="name" maxlength="80" required placeholder="Daily project review">
+    <span class="ag-lab" id="provider-label">Agent</span>
+    <div class="ag-provider-group" role="group" aria-labelledby="provider-label">
+      <button class="ag-provider-option" type="button" data-provider="claude" aria-pressed="true"><img src="icons/claude.svg" alt="">Claude Code<span class="ag-provider-check" aria-hidden="true">✓</span></button>
+      <button class="ag-provider-option" type="button" data-provider="codex" aria-pressed="false"><img src="icons/codex.svg" alt="">Codex<span class="ag-provider-check" aria-hidden="true">✓</span></button>
+    </div>
+    <label class="ag-lab" for="task-dir">Project folder</label><input id="task-dir" name="dir" required placeholder="Absolute folder path" autocomplete="off" list="recent-dirs"><datalist id="recent-dirs"></datalist>
+    <label class="ag-lab" for="task-prompt">Instructions</label><textarea id="task-prompt" name="prompt" required maxlength="24000" rows="4" placeholder="Review recent changes and summarize anything that needs attention."></textarea>
+    <div class="sc-fields">
+      <label class="ag-lab" for="task-repeat">Repeat<select id="task-repeat" name="repeat"><option value="once">Once</option><option value="interval">Every interval</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
+      <label class="ag-lab" for="task-at">First run<input id="task-at" name="at" type="datetime-local" required></label>
+      <label class="ag-lab" for="task-every" id="interval-field" hidden>Every (minutes)<input id="task-every" name="every" type="number" min="1" max="43200" value="60"></label>
+      <label class="ag-lab" for="task-timeout">Time limit (minutes)<input id="task-timeout" name="timeout" type="number" min="1" max="1440" value="60" required></label>
+    </div>
+    <p class="meta" id="timezone-note"></p>
+    <p class="meta">Each run starts a fresh session in batch mode. Existing CLI permission settings apply; tasks requiring unavailable approval may fail. Run now adds an extra run without changing the schedule.</p>
+    <p class="ag-err" id="form-error" role="alert"></p>
+    <div class="ag-go"><button class="btn btn-primary" type="submit" id="save-task">Save schedule</button><button class="btn btn-secondary" id="cancel-task" type="button">Cancel</button></div>
+  </form>
+</dialog>
+<dialog class="panel sc-dialog sc-history-dialog" id="history-dialog" aria-labelledby="history-title">
+  <div class="sc-dialog-head"><h2 id="history-title">Run history</h2><button class="btn btn-secondary" id="close-history" type="button" aria-label="Close history">✕</button></div>
+  <p class="meta">Last 30 runs. Output keeps the last 64 KiB of terminal scrollback per run.</p>
+  <div id="history" aria-live="polite"></div>
+</dialog>
+<div class="scanlines" aria-hidden="true"></div>
+<script src="schedules.js"></script>
+</body>
+</html>

@@ -4,6 +4,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,15 +27,18 @@ import (
 const maxBody = 4 << 20
 
 type Server struct {
-	st      *store.Store
-	fl      *fleet.Fleet
-	hub     *Hub
-	log     *log.Logger
-	now     func() int64
-	dirty   atomic.Bool
-	terms   *term.Manager // dashboard-started agents
-	termsOn atomic.Bool
-	stats   statsCache
+	st          *store.Store
+	fl          *fleet.Fleet
+	hub         *Hub
+	log         *log.Logger
+	now         func() int64
+	dirty       atomic.Bool
+	terms       *term.Manager // dashboard-started agents
+	termsOn     atomic.Bool
+	stats       statsCache
+	codexLimits codexLimitsCache
+	scheduleMu  sync.Mutex
+	scheduled   map[string]*scheduledRun
 	// OnShutdown stops the daemon; set by Run. Used by `trk update` to restart into the new binary.
 	OnShutdown func()
 	// OnStop pauses TRK (hooks stop respawning it) and then shuts down; set by Run.
@@ -41,7 +46,7 @@ type Server struct {
 }
 
 func NewServer(st *store.Store, fl *fleet.Fleet, logger *log.Logger) *Server {
-	s := &Server{st: st, fl: fl, hub: NewHub(), log: logger, now: func() int64 { return time.Now().UnixMilli() }, terms: term.NewManager()}
+	s := &Server{st: st, fl: fl, hub: NewHub(), log: logger, now: func() int64 { return time.Now().UnixMilli() }, terms: term.NewManager(), scheduled: make(map[string]*scheduledRun)}
 	s.terms.OnChange = func() { s.dirty.Store(true) }
 	return s
 }
@@ -58,8 +63,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/terms", s.startTerm)
 	mux.HandleFunc("DELETE /v1/terms/{id}", s.stopTerm)
 	mux.HandleFunc("GET /v1/terms/{id}/ws", s.attachTerm)
+	mux.HandleFunc("GET /v1/schedules", s.listSchedules)
+	mux.HandleFunc("POST /v1/schedules", s.createSchedule)
+	mux.HandleFunc("PUT /v1/schedules/{id}", s.updateSchedule)
+	mux.HandleFunc("DELETE /v1/schedules/{id}", s.deleteSchedule)
+	mux.HandleFunc("POST /v1/schedules/{id}/enabled", s.enableSchedule)
+	mux.HandleFunc("POST /v1/schedules/{id}/run", s.runScheduleNow)
+	mux.HandleFunc("POST /v1/schedules/{id}/stop", s.stopScheduleRun)
+	mux.HandleFunc("GET /v1/schedules/{id}/runs", s.listScheduleRuns)
 	mux.HandleFunc("GET /v1/account", s.getAccount)
 	mux.HandleFunc("GET /v1/limits/history", s.getLimitHistory)
+	mux.HandleFunc("GET /v1/codex/limits", s.getCodexLimits)
 	mux.HandleFunc("GET /v1/stats", s.getStats)
 	mux.HandleFunc("GET /v1/stream", s.stream)
 	mux.HandleFunc("GET /healthz", s.healthz)
@@ -114,6 +128,10 @@ func (s *Server) postEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.st.Append(&ev); err != nil {
+		if errors.Is(err, store.ErrDuplicate) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		s.log.Printf("append: %v", err)
 		http.Error(w, "store error", http.StatusInternalServerError)
 		return
@@ -121,6 +139,11 @@ func (s *Server) postEvent(w http.ResponseWriter, r *http.Request) {
 	sess := s.fl.Apply(ev, now)
 	if err := s.st.UpsertSession(sess); err != nil {
 		s.log.Printf("upsert session: %v", err)
+	}
+	if ev.Provider == model.ProviderCodex && (ev.Kind == model.KindSessionStart || ev.Kind == model.KindPrompt) && s.terms.LinkCodex(env.TerminalID, ev.SessionID) {
+		if t, ok := s.terms.Get(env.TerminalID); ok && t.Info().Title != "" {
+			s.titleOnce(ev.SessionID, t.Info().Title)
+		}
 	}
 	if ev.Kind == model.KindStatus {
 		if err := s.st.SaveAccount(s.fl.Account()); err != nil {

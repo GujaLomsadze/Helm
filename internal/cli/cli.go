@@ -14,6 +14,7 @@ const usageText = `trk — live tracker for coding agents
   trk open                       open the dashboard (resumes TRK if stopped)
   trk stop                       stop TRK; hooks pause until trk open
   trk init                       wire up Claude Code hooks, status line, CLAUDE.md
+  trk init --agent codex          install Codex hooks (review with /hooks in Codex)
   trk update [--check]           install the latest release (restarts the daemon)
 
   trk start "<task>" --steps N   declare a task
@@ -23,6 +24,8 @@ const usageText = `trk — live tracker for coding agents
   trk done "<result>"            declare completion
 
   trk hook                       (Claude Code) forward hook JSON from stdin
+  trk codex-hook                 (Codex) forward lifecycle hook JSON from stdin
+  trk codex <verb> ...           report start/step/progress/blocked/done for Codex
   trk statusline [--then CMD]    (Claude Code) forward status JSON, print a line
   trk version
 `
@@ -37,11 +40,22 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	cmd, rest := args[0], args[1:]
 	switch cmd {
-	case "start", "step", "progress", "blocked", "done", "hook", "statusline":
+	case "start", "step", "progress", "blocked", "done", "hook", "codex-hook", "codex", "statusline":
 		return safe(func() int {
 			switch cmd {
 			case "hook":
 				return hook(stdin)
+			case "codex-hook":
+				return codexHook(stdin, stdout)
+			case "codex":
+				if len(rest) == 0 {
+					return 0
+				}
+				switch rest[0] {
+				case "start", "step", "progress", "blocked", "done":
+					return reportFor(rest[0], rest[1:], stderr, "codex")
+				}
+				return 0
 			case "statusline":
 				return statusline(rest, stdin, stdout)
 			}

@@ -7,12 +7,13 @@ import (
 )
 
 const (
-	StatusWorking = "working"
-	StatusWaiting = "waiting"
-	StatusBlocked = "blocked"
-	StatusIdle    = "idle"
-	StatusLooping = "looping"
-	StatusDone    = "done"
+	StatusInterrupted = "interrupted"
+	StatusWorking     = "working"
+	StatusWaiting     = "waiting"
+	StatusBlocked     = "blocked"
+	StatusIdle        = "idle"
+	StatusLooping     = "looping"
+	StatusDone        = "done"
 )
 
 type Loop struct {
@@ -34,6 +35,8 @@ func Status(t *Tracker, now int64) (string, *Loop) {
 		return StatusWaiting, loop
 	case t.Blocked != nil:
 		return StatusBlocked, loop
+	case t.InterruptedAt > 0 && t.LastActivity <= t.InterruptedAt && t.DoneAt <= t.InterruptedAt:
+		return StatusInterrupted, loop
 	case t.DoneAt > 0 && t.LastActivity <= t.DoneAt:
 		return StatusDone, loop
 	case now-t.LastActivity > IdleAfter:
@@ -73,8 +76,12 @@ func DetectLoop(calls []ToolCall, progressAt, now int64) *Loop {
 		if c.Failed && c.Key != "" {
 			bump(fails, c.Key, "fail", c)
 		}
-		if c.Edit && c.File != "" && c.Start > progressAt {
-			bump(churn, c.File, "churn", c)
+		if c.Edit && c.Start > progressAt {
+			for _, file := range c.Paths() {
+				cc := c
+				cc.Summary = file
+				bump(churn, file, "churn", cc)
+			}
 		}
 	}
 	if l := worst(fails, LoopFailures); l != nil {

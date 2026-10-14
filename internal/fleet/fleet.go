@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/GujaLomsadze/trk/internal/codex"
 	"github.com/GujaLomsadze/trk/internal/derive"
 	"github.com/GujaLomsadze/trk/internal/gitinfo"
 	"github.com/GujaLomsadze/trk/internal/model"
@@ -26,11 +27,12 @@ const (
 )
 
 type entry struct {
-	S          model.Session
-	T          derive.Tracker
-	statusHash uint64
-	subSeen    map[string]bool // subagent ids already counted (SubagentStop can repeat)
-	restoredAt int64           // last event already folded into the restored session; replays up to it are not re-counted
+	S           model.Session
+	T           derive.Tracker
+	statusHash  uint64
+	subSeen     map[string]bool // subagent ids already counted (SubagentStop can repeat)
+	restoredAt  int64           // last event already folded into the restored session; replays up to it are not re-counted
+	forkPending bool            // don't flash a blank fork card before its purpose is known
 }
 
 type gitCached struct {
@@ -116,7 +118,7 @@ func (f *Fleet) Dismiss(id string, now int64) error {
 	if !ok {
 		return ErrNotFound
 	}
-	if st, _ := derive.Status(&e.T, now); st != derive.StatusIdle && st != derive.StatusDone {
+	if st, _ := derive.Status(&e.T, now); st != derive.StatusIdle && st != derive.StatusDone && st != derive.StatusInterrupted {
 		return ErrActive
 	}
 	e.S.DismissedAt = now
@@ -174,6 +176,29 @@ func (f *Fleet) Account() model.Account {
 }
 
 func (f *Fleet) Normalize(env model.Envelope, now int64) (model.Event, bool) {
+	provider := env.Provider
+	if provider == "" && strings.HasPrefix(env.SessionID, "codex:") {
+		provider = model.ProviderCodex
+	}
+	if provider == "" {
+		if env.Source != model.SourceHook && env.Source != model.SourceStatusline && env.Source != model.SourceCLI {
+			provider = model.ProviderGeneric
+		} else {
+			provider = model.ProviderClaude
+		}
+	}
+	if provider != model.ProviderClaude && provider != model.ProviderCodex && provider != model.ProviderGeneric {
+		return model.Event{}, false
+	}
+	env.Provider = provider
+	var native, eventKey string
+	if provider == model.ProviderCodex && env.Source == model.SourceHook {
+		var ok bool
+		env.Payload, env.Kind, native, eventKey, ok = codex.Normalize(env.Payload)
+		if !ok {
+			return model.Event{}, false
+		}
+	}
 	ts := env.TS
 	if ts <= 0 || ts > now+clockSkew || ts < now-clockSkew {
 		ts = now
@@ -194,7 +219,9 @@ func (f *Fleet) Normalize(env model.Envelope, now int64) (model.Event, bool) {
 	kind := env.Kind
 	switch source {
 	case model.SourceHook:
-		kind = model.KindForHook(p.HookEvent)
+		if provider != model.ProviderCodex {
+			kind = model.KindForHook(p.HookEvent)
+		}
 	case model.SourceStatusline:
 		kind = model.KindStatus
 	}
@@ -205,12 +232,15 @@ func (f *Fleet) Normalize(env model.Envelope, now int64) (model.Event, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	sid, attr := f.resolve(env, source, p, now)
+	if native == "" && (attr == model.AttrNative || attr == model.AttrEnv) {
+		native = model.NativeSessionID(provider, sid)
+	}
 	if kind == model.KindStatus {
 		if e := f.sessions[sid]; e != nil && e.statusHash == statusKey(p) {
 			return model.Event{}, false
 		}
 	}
-	return model.Event{TS: ts, SessionID: sid, Source: source, Kind: kind, Payload: raw, Attribution: attr}, true
+	return model.Event{Provider: provider, NativeID: native, EventKey: eventKey, TS: ts, SessionID: sid, Source: source, Kind: kind, Payload: raw, Attribution: attr}, true
 }
 
 // statusKey hashes only the status-line fields TRK uses, so refreshes that change
@@ -243,6 +273,39 @@ func hash(b []byte) uint64 {
 }
 
 func (f *Fleet) resolve(env model.Envelope, source string, p payload, now int64) (string, string) {
+	// Codex's shared server can host many sessions in one process. Never learn PID -> session for it.
+	if env.Provider == model.ProviderCodex {
+		if source == model.SourceHook && p.SessionID != "" {
+			return model.SessionKey(env.Provider, p.SessionID), model.AttrNative
+		}
+		if env.SessionID != "" {
+			return model.SessionKey(env.Provider, env.SessionID), model.AttrEnv
+		}
+		// Ambiguous directory matches must not silently attribute progress to another chat.
+		var match string
+		for sid, e := range f.sessions {
+			if e.forkPending || codex.BackgroundSession(e.S) {
+				continue
+			}
+			if e.S.Provider != model.ProviderCodex || e.S.Cwd == "" || filepath.Clean(e.S.Cwd) != filepath.Clean(p.cwd()) {
+				continue
+			}
+			st, _ := derive.Status(&e.T, now)
+			if st == derive.StatusDone || st == derive.StatusInterrupted {
+				continue
+			}
+			if match != "" {
+				match = ""
+				break
+			}
+			match = sid
+		}
+		if match != "" {
+			return match, model.AttrCwd
+		}
+		sum := sha1.Sum([]byte(filepath.Clean(p.cwd())))
+		return "codex:cwd-" + hex.EncodeToString(sum[:])[:8], model.AttrCwd
+	}
 	learn := func(sid string) {
 		if env.ClaudePID <= 0 || sid == "" || f.pids[env.ClaudePID] == sid {
 			return
@@ -287,6 +350,9 @@ func (f *Fleet) matchCwd(cwd string, now int64) string {
 	branch := f.gitInfo(cwd, now).Branch
 	best, bestScore, bestLast := "", 0, int64(0)
 	for sid, e := range f.sessions {
+		if e.S.Provider == model.ProviderCodex {
+			continue
+		}
 		if e.S.Cwd == "" {
 			continue
 		}
@@ -332,6 +398,17 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 		f.sessions[ev.SessionID] = e
 	}
 	s, t := &e.S, &e.T
+	// Generic progress can annotate a known provider session, including legacy replay.
+	// It must not erase identity learned from that provider's native hooks.
+	if ev.Provider != "" && (ev.Provider != model.ProviderGeneric || s.Provider == "" || s.Provider == model.ProviderGeneric) {
+		s.Provider = ev.Provider
+	}
+	if ev.NativeID != "" {
+		s.NativeID = ev.NativeID
+	}
+	if s.Provider == model.ProviderCodex && p.modelName() != "" {
+		s.Model = p.modelName()
+	}
 	if ev.TS > s.LastEventAt {
 		s.LastEventAt = ev.TS
 	}
@@ -347,13 +424,26 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 	if model.IsActivity(ev.Kind) {
 		t.Activity(ev.TS)
 	}
+	if s.Provider == model.ProviderCodex {
+		if ev.Kind == model.KindSessionStart && p.SessionSource == "fork" && s.LastPrompt == "" && s.Task == "" && len(t.Calls) == 0 {
+			e.forkPending = true
+		}
+		switch ev.Kind {
+		case model.KindPrompt, model.KindStart, model.KindToolPre, model.KindToolPost, model.KindToolFail:
+			e.forkPending = false
+		}
+	}
 
 	switch ev.Kind {
 	case model.KindSessionStart:
+		if s.Provider == model.ProviderCodex && ev.TS <= max(t.DoneAt, t.InterruptedAt) {
+			break
+		}
 		if m := p.modelName(); m != "" {
 			s.Model = m
 		}
 		t.DoneAt = 0
+		t.InterruptedAt = 0
 		t.ClearPending(ev.TS)
 	case model.KindStart:
 		s.Task, s.StepN, s.StepI, s.StepText = p.Text, p.Steps, 0, ""
@@ -381,20 +471,31 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 			s.StepI = s.StepN
 		}
 	case model.KindPrompt:
-		t.ClearPending(ev.TS)
-		t.Blocked, t.DoneAt = nil, 0
-		if txt := cardText(p.Prompt, false); txt != "" {
+		// Retain prompt identity even when an async Stop overtakes this event.
+		if txt := cardText(p.Prompt, false); txt != "" && ev.TS >= s.LastPromptAt {
 			s.LastPrompt, s.LastPromptAt = txt, ev.TS
 		}
+		if s.Provider == model.ProviderCodex && ev.TS <= max(t.DoneAt, t.InterruptedAt) {
+			break
+		}
+		t.ClearPending(ev.TS)
+		t.Blocked, t.DoneAt = nil, 0
+		t.InterruptedAt = 0
 	case model.KindSubagentStop:
 		// An untyped agent finishing after the turn ended is Claude Code's own
 		// background agent, not one the session spawned.
-		internal := p.AgentType == "" && t.DoneAt > 0
+		internal := s.Provider != model.ProviderCodex && p.AgentType == "" && t.DoneAt > 0
 		if ev.TS > e.restoredAt && !internal { // the restored count already includes older ones
 			e.countSubagent(p)
 		}
 	case model.KindToolPre:
 		t.ToolStart(f.call(p, s.Cwd, ev.TS))
+		if s.Provider == model.ProviderCodex {
+			t.ClearPending(ev.TS)
+			if end := max(t.DoneAt, t.InterruptedAt); end >= ev.TS {
+				t.FinishCalls(end)
+			}
+		}
 	case model.KindToolPost, model.KindToolFail:
 		c := f.call(p, s.Cwd, 0)
 		c.End, c.Failed = ev.TS, ev.Kind == model.KindToolFail
@@ -419,6 +520,10 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 			t.DoneAt = ev.TS
 		}
 		t.ClearPending(ev.TS)
+		if s.Provider == model.ProviderCodex {
+			t.Blocked = nil
+			t.FinishCalls(ev.TS)
+		}
 		if ev.Kind == model.KindStop {
 			if txt := cardText(p.LastAssistant, true); txt != "" {
 				s.LastReply, s.LastReplyAt = txt, ev.TS
@@ -432,6 +537,13 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 				}
 			}
 		}
+	case model.KindInterrupt:
+		if ev.TS >= t.InterruptedAt {
+			t.InterruptedAt = ev.TS
+		}
+		t.ClearPending(ev.TS)
+		t.Blocked = nil
+		t.FinishCalls(ev.TS)
 	case model.KindStatus:
 		e.statusHash = statusKey(p)
 		f.applyStatus(s, p, ev.TS)
@@ -443,7 +555,11 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 
 func (f *Fleet) call(p payload, cwd string, start int64) derive.ToolCall {
 	sum, key, file, edit := derive.Describe(p.ToolName, p.ToolInput, cwd)
-	return derive.ToolCall{ID: p.ToolUseID, Tool: p.ToolName, Summary: sum, Key: key, File: file, Edit: edit, Start: start}
+	files := derive.ResolveFiles(p.ToolFiles, cwd)
+	if len(files) > 0 {
+		file, edit, sum = files[0], true, strings.Join(files, ", ")
+	}
+	return derive.ToolCall{ID: p.ToolUseID, Tool: p.ToolName, Summary: sum, Key: key, File: file, Files: files, Outcome: p.ToolOutcome, Edit: edit, Start: start}
 }
 
 func (f *Fleet) applyStatus(s *model.Session, p payload, ts int64) {
@@ -459,9 +575,11 @@ func (f *Fleet) applyStatus(s *model.Session, p payload, ts int64) {
 			s.CtxSize = int64(*cw.ContextWindowSize)
 		}
 		if cw.TotalInputTokens != nil {
+			s.TokensKnown = true
 			s.TokensIn = int64(*cw.TotalInputTokens)
 		}
 		if cw.TotalOutputTokens != nil {
+			s.TokensKnown = true
 			s.TokensOut = int64(*cw.TotalOutputTokens)
 		}
 	}
@@ -472,15 +590,19 @@ func (f *Fleet) applyStatus(s *model.Session, p payload, ts int64) {
 			}
 		}
 		if c.TotalCostUSD != nil {
+			s.CostKnown = true
 			s.CostUSD = *c.TotalCostUSD
 		}
 		setNum(c.TotalLinesAdded, &s.LinesAdded)
 		setNum(c.TotalLinesRemoved, &s.LinesRemoved)
 		setNum(c.TotalAPIDurationMs, &s.APIMs)
+		if c.TotalAPIDurationMs != nil {
+			s.TimeKnown = true
+		}
 		setNum(c.TotalDurationMs, &s.WallMs)
 	}
 	rl := p.RateLimits
-	if rl == nil || ts < f.account.UpdatedAt {
+	if s.Provider == model.ProviderCodex || s.Provider == model.ProviderGeneric || rl == nil || ts < f.account.UpdatedAt {
 		return
 	}
 	set := func(w *window, pct **float64, reset *int64) bool {
