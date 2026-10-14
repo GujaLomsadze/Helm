@@ -1,6 +1,6 @@
 "use strict";
 // Agent drawer: click a card (or "+ Agent") to see that agent's terminal, resume or fork a
-// session, or start claude in a folder. Uses h/$/view/dur/now/CHIP from app.js and TRKTerm
+// session, or start Claude or Codex in a folder. Uses h/$/view/dur/now/CHIP from app.js and TRKTerm
 // from term.js. Only the terminal on screen holds a websocket: the browser allows 6
 // connections per host.
 
@@ -18,6 +18,7 @@ window.TRKAgents = (function () {
   const termName = (t) => { const s = session(t.session_id); return s ? s.name : t.title || t.name; };
   // only real Claude session ids can be resumed (not cwd-… fallbacks or `trk start` ids)
   const resumable = (sid) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid || "");
+  const nativeID = (t) => t.provider === "codex" ? (t.session_id || "").replace(/^codex:/, "") : t.session_id;
   const shq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
   const resumeCmd = (s) => `cd ${shq(s.cwd)} && claude --resume ${s.session_id}`;
 
@@ -65,8 +66,8 @@ window.TRKAgents = (function () {
     $("ag-pop").hidden = !t || t.exited;
     $("ag-font").hidden = !t || popped.has(t.id);
     $("ag-stop").hidden = !t;
-    $("ag-stop").textContent = t && t.exited ? "Remove" : "Stop claude";
-    $("ag-resume").hidden = !(t && t.exited && resumable(t.session_id) && enabled());
+    $("ag-stop").textContent = t && t.exited ? "Remove" : "Stop " + providerName(t || {});
+    $("ag-resume").hidden = !(t && t.exited && resumable(nativeID(t)) && enabled());
     $("agents-title").textContent = t ? termName(t) : s ? s.name : "+ New agent";
     if (!renaming) $("ag-rename").hidden = !session(currentSid());
   }
@@ -143,6 +144,8 @@ window.TRKAgents = (function () {
       const id = s.native_session_id;
       const cmd = s.provider === "codex" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(id || "") ? "codex resume " + id : "";
       const copy = cmd ? h("button", { type: "button", class: "btn btn-secondary" }, "Copy resume command") : null;
+      const fresh = h("button", { type: "button", class: "btn btn-secondary", disabled: enabled() ? null : "" }, "New agent here");
+      fresh.addEventListener("click", () => show("new", {dir:s.cwd, name:s.name, provider:s.provider}));
       if (copy) copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(cmd); copy.textContent = "Copied"; } catch { copy.textContent = "Copy the command below"; } });
       main.replaceChildren(h("div", { class: "ag-ext" },
         h("h3", null, providerName(s) + " · " + s.name),
@@ -151,7 +154,7 @@ window.TRKAgents = (function () {
         h("p", { class: "meta" }, s.cwd), h("code", null, id || sid),
         s.last_prompt ? h("p", null, s.last_prompt) : null,
         s.last_reply ? h("p", null, s.last_reply) : null,
-        cmd ? h("p", null, h("code", null, cmd)) : null, copy));
+        cmd ? h("p", null, h("code", null, cmd)) : null, copy, fresh));
       return;
     }
     const elsewhere = !!(view.running && sid in view.running);
@@ -183,7 +186,7 @@ window.TRKAgents = (function () {
     const fork = act("fork", "↳ Fork into TRK", "A copy of the conversation runs here; the original stays as it is.", "claude --resume " + short + " --fork-session",
       launchSpec({ dir: s.cwd, resume: sid, fork: true }), { primary: elsewhere || maybe, disabled: !on });
     const fresh = act("new", "+ New agent here", `Fresh claude in ${folder}/, nothing carried over.`, null,
-      () => show("new", { dir: s.cwd, name: s.name }), { disabled: !on });
+      () => show("new", { dir: s.cwd, name: s.name, provider: s.provider }), { disabled: !on });
     const copy = act("copy", "» Copy resume command", "Paste it into any terminal.", resumeCmd(s), (b) => copyText(resumeCmd(s), b));
     const off = !view.terminals_supported ? "Terminals don't run on this system (native Windows); copy the command instead."
       : !on ? "Terminals are off. Turn them on in ⚙ Card layout → Terminals." : "";
@@ -213,13 +216,34 @@ window.TRKAgents = (function () {
     const on = enabled();
     const err = h("span", { class: "ag-err", role: "alert" });
     const dir = h("input", { id: "ag-dir", list: "ag-dirs", autocomplete: "off", spellcheck: "false", value: (from && from.dir) || dirs[0] || "", placeholder: "/path/to/project" });
-    const base = (d) => d.split("/").filter(Boolean).pop() || "";
+    const base = (d) => d.split(/[\\/]/).filter(Boolean).pop() || "";
     const name = h("input", { id: "ag-name", maxlength: "80", autocomplete: "off", spellcheck: "false", placeholder: base(dir.value) || "the folder's name" });
     dir.addEventListener("input", () => { name.placeholder = base(dir.value) || "the folder's name"; });
     const prompt = h("textarea", { id: "ag-prompt", placeholder: "optional, e.g. run the tests and fix what fails" });
-    const go = h("button", { class: "btn btn-primary", type: "submit", disabled: on ? null : "" }, "Launch claude");
+    let provider = from?.provider === "codex" ? "codex" : "claude";
+    const providerButtons = ["claude", "codex"].map((id) => {
+      const button = h("button", { type: "button", class: "ag-provider-option", "data-provider": id },
+        h("img", { src: "icons/" + id + ".svg", alt: "", width: "22", height: "22" }),
+        h("span", null, id === "claude" ? "Claude Code" : "Codex"),
+        h("span", { class: "ag-provider-check", "aria-hidden": "true" }, "✓"));
+      button.addEventListener("click", () => { provider = id; updateProvider(); });
+      return button;
+    });
+    const providerGroup = h("div", { class: "ag-provider-group", role: "group", "aria-labelledby": "ag-provider-label" }, providerButtons);
+    const go = h("button", { class: "btn btn-primary", type: "submit", disabled: on ? null : "" });
+    const note = h("p", { class: "meta" });
+    const updateProvider = () => {
+      for (const button of providerButtons) button.setAttribute("aria-pressed", String(button.dataset.provider === provider));
+      const label = provider === "codex" ? "Codex" : "Claude";
+      go.textContent = "Launch " + label;
+      note.textContent = on ? "Runs " + label + " in a terminal owned by TRK. Closing this drawer keeps it running. Your normal sign-in, approval, and hook-trust prompts appear here. Agents stop when TRK restarts."
+        : view && !view.terminals_supported ? "Embedded terminals are unavailable on this system."
+        : "Terminals are off. Turn them on in ⚙ Card layout → Terminals.";
+    };
+    updateProvider();
     const f = h("form", { class: "ag-form" },
       from ? h("div", { class: "ag-from" }, "Folder from " + from.name) : null,
+      h("span", { class: "ag-lab", id: "ag-provider-label" }, "Agent"), providerGroup,
       h("label", { class: "ag-lab", for: "ag-dir" }, "Folder"), dir,
       h("datalist", { id: "ag-dirs" }, dirs.map((d) => h("option", { value: d }))),
       dirs.length ? h("div", { class: "ag-recent" }, dirs.slice(0, 8).map((d) =>
@@ -227,16 +251,13 @@ window.TRKAgents = (function () {
       h("label", { class: "ag-lab", for: "ag-name" }, "Name ", h("span", { class: "ag-opt" }, "optional · shown on its card")), name,
       h("label", { class: "ag-lab", for: "ag-prompt" }, "First prompt"), prompt,
       h("div", { class: "ag-go" }, go, err),
-      h("p", { class: "meta" }, on
-        ? "Runs claude in a terminal owned by TRK. Closing this drawer keeps it running. If TRK restarts, resume it from its card."
-        : view && !view.terminals_supported ? "Terminals don't run on this system (native Windows)."
-        : "Terminals are off. Turn them on in ⚙ Card layout → Terminals."));
+      note);
     f.addEventListener("click", (e) => { const b = e.target.closest("[data-dir]"); if (b) { dir.value = b.dataset.dir; name.placeholder = base(dir.value); } });
     f.addEventListener("submit", async (e) => {
       e.preventDefault();
       err.textContent = "";
       go.disabled = true;
-      try { await launch({ dir: dir.value.trim(), prompt: prompt.value, title: name.value }); }
+      try { await launch({ provider, dir: dir.value.trim(), prompt: prompt.value, title: name.value }); }
       catch (x) { err.textContent = String(x.message || x); go.disabled = false; }
     });
     if (from) setTimeout(() => prompt.focus(), 50);
@@ -248,7 +269,8 @@ window.TRKAgents = (function () {
     if (!r.ok) throw new Error((await r.text()).trim());
     const t = await r.json();
     // a resume replaces the exited terminal of that session (the daemon drops it too)
-    terms = [...terms.filter((x) => !(spec.resume && !spec.fork && x.exited && x.session_id === spec.resume)), t];
+    const sid = spec.provider === "codex" ? "codex:" + spec.resume : spec.resume;
+    terms = [...terms.filter((x) => !(spec.resume && !spec.fork && x.exited && x.session_id === sid)), t];
     show(t.id);
   }
 
@@ -316,7 +338,7 @@ window.TRKAgents = (function () {
 
   tabs.addEventListener("click", (e) => {
     const here = e.target.closest("[data-here]");
-    if (here) { const t = find(here.dataset.here); return t && show("new", { dir: t.dir, name: termName(t) }); }
+    if (here) { const t = find(here.dataset.here); return t && show("new", { dir: t.dir, name: termName(t), provider: t.provider }); }
     const b = e.target.closest("[data-tab]");
     if (b) show(b.dataset.tab);
   });
@@ -330,11 +352,11 @@ window.TRKAgents = (function () {
   $("ag-resume").addEventListener("click", async () => {
     const t = find(selected);
     if (!t) return;
-    try { await launch({ dir: t.dir, resume: t.session_id }); } catch (x) { alert(String(x.message || x)); }
+    try { await launch({ provider: t.provider, dir: t.dir, resume: nativeID(t) }); } catch (x) { alert(String(x.message || x)); }
   });
   $("ag-stop").addEventListener("click", async () => {
     const t = find(selected);
-    if (!t || (!t.exited && !confirm(`Stop claude in ${termName(t)}?\n\nThe agent is killed; you can resume its conversation from its card.`))) return;
+    if (!t || (!t.exited && !confirm(`Stop ${providerName(t)} in ${termName(t)}?\n\nThe agent is killed; you can resume its conversation from its card.`))) return;
     dropViewer();
     await TRKTerm.stop(t.id);
     terms = terms.filter((x) => x.id !== t.id);

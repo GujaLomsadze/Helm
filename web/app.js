@@ -278,6 +278,7 @@ const FOOT = {
 
 function card(s) {
   const [label, tone] = CHIP[s.status] || CHIP.working;
+  const logo = s.provider === "codex" ? "codex" : !s.provider || s.provider === "claude" ? "claude" : null;
   const where = [s.repo, s.branch].filter(Boolean).join(" · ") || s.cwd || "";
   // flash the newest tool line when it changes
   const top = s.recent && s.recent[0] ? s.recent[0].tool + s.recent[0].summary : "";
@@ -291,7 +292,7 @@ function card(s) {
         ? h("button", { class: "dismiss", type: "button", "data-dismiss": s.session_id, "aria-label": "Hide " + s.name, title: "Hide this card (it comes back if the session gets busy again)" }, "✕")
         : null,
       h("div", { class: "head-text" }, h("h3", { class: "card-name one", title: s.auto_name ? `${s.name} (${s.auto_name})` : s.name }, s.name),
-        h("div", { class: "meta one", title: where }, h("span", { class: "provider-badge" }, providerName(s)), " · ", s.in_trk ? h("span", { class: "in-trk", title: "Running in a TRK terminal" }, "⌨ ") : null, where || DASH)),
+        h("div", { class: "meta one", title: where }, h("span", { class: "provider-badge" }, logo ? h("img", { class: "provider-logo", src: "icons/" + logo + ".svg", alt: "", width: "16", height: "16" }) : null, providerName(s)), " · ", s.in_trk ? h("span", { class: "in-trk", title: "Running in a TRK terminal" }, "⌨ ") : null, where || DASH)),
       // WORKING: light runs through the letters (the text needs its own box for background-clip)
       h("span", { class: "chip chip-" + tone }, tone === "work" ? h("span", { class: "shine" }, label) : label)),
     layout.slots.filter((x) => x.on).map((x) => RENDER[x.id](s, fresh)),

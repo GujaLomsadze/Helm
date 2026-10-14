@@ -27,7 +27,7 @@
     if (!result) return;
     const stale = result.stale || (result.updated_at && now() - result.updated_at > 120e3);
     const cards = (result.buckets || []).map(b => h("section", { class: "panel chart-panel" },
-      h("div", { class: "chart-head" }, h("h2", null, "Codex · " + (b.limitName || b.limitId))),
+      h("div", { class: "chart-head" }, h("h2", { class: "provider-badge" }, h("img", { class: "provider-logo", src: "icons/codex.svg", alt: "", width: "16", height: "16" }), b.limitName || (b.limitId === "codex" ? "Codex" : "Codex · " + b.limitId))),
       h("div", { class: "tiles codex-tiles" }, windowTile(b.primary, 0), windowTile(b.secondary, 1))));
     box.replaceChildren(...[
       h("p", { class: "meta" }, "Account usage shared across sessions using this Codex CLI sign-in. " + (result.updated_at ? (stale ? "Stale reading · " : "Updated ") + new Date(result.updated_at).toLocaleTimeString() : "")),

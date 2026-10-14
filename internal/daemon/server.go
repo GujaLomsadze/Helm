@@ -129,6 +129,11 @@ func (s *Server) postEvent(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.UpsertSession(sess); err != nil {
 		s.log.Printf("upsert session: %v", err)
 	}
+	if ev.Provider == model.ProviderCodex && (ev.Kind == model.KindSessionStart || ev.Kind == model.KindPrompt) && s.terms.LinkCodex(env.TerminalID, ev.SessionID) {
+		if t, ok := s.terms.Get(env.TerminalID); ok && t.Info().Title != "" {
+			s.titleOnce(ev.SessionID, t.Info().Title)
+		}
+	}
 	if ev.Kind == model.KindStatus {
 		if err := s.st.SaveAccount(s.fl.Account()); err != nil {
 			s.log.Printf("save account: %v", err)
