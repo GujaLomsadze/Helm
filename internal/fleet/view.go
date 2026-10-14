@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GujaLomsadze/trk/internal/codex"
 	"github.com/GujaLomsadze/trk/internal/derive"
 	"github.com/GujaLomsadze/trk/internal/model"
 )
@@ -30,19 +31,26 @@ type Block struct {
 
 type SessionView struct {
 	model.Session
-	Loop      *derive.Loop      `json:"loop,omitempty"`
-	Reality   string            `json:"reality,omitempty"`
-	Recent    []CallView        `json:"recent"`
-	Timeline  []Block           `json:"timeline"`
-	Attention bool              `json:"attention"`
-	AutoName  string            `json:"auto_name,omitempty"` // the name TRK would show, when a title replaces it
-	Need      *derive.Need      `json:"need,omitempty"`
-	Ctx       derive.CtxBand    `json:"ctx"`
-	Calls     []derive.ToolCall `json:"calls,omitempty"`
+	Capabilities Capabilities      `json:"capabilities"`
+	Loop         *derive.Loop      `json:"loop,omitempty"`
+	Reality      string            `json:"reality,omitempty"`
+	Recent       []CallView        `json:"recent"`
+	Timeline     []Block           `json:"timeline"`
+	Attention    bool              `json:"attention"`
+	AutoName     string            `json:"auto_name,omitempty"` // the name TRK would show, when a title replaces it
+	Need         *derive.Need      `json:"need,omitempty"`
+	Ctx          derive.CtxBand    `json:"ctx"`
+	Calls        []derive.ToolCall `json:"calls,omitempty"`
 	// Activity in the tracker window (last 30 min), for the optional card widgets.
 	ToolCalls   int `json:"tool_calls"`
 	FilesRead   int `json:"files_read"` // read but never edited
 	FilesEdited int `json:"files_edited"`
+}
+
+type Capabilities struct {
+	ManagedTerminal bool   `json:"managed_terminal"`
+	Resume          bool   `json:"resume"`
+	Telemetry       string `json:"telemetry"`
 }
 
 type NeedItem struct {
@@ -57,10 +65,12 @@ type CollisionView struct {
 }
 
 type Stats struct {
-	Agents      int   `json:"agents"`
-	Working     int   `json:"working"`
-	NeedsYou    int   `json:"needs_you"`
-	TokensToday int64 `json:"tokens_today"`
+	Agents        int   `json:"agents"`
+	Working       int   `json:"working"`
+	NeedsYou      int   `json:"needs_you"`
+	TokensToday   int64 `json:"tokens_today"`
+	TokensKnown   bool  `json:"tokens_known"`
+	TokensPartial bool  `json:"tokens_partial"`
 }
 
 type View struct {
@@ -85,10 +95,10 @@ func (f *Fleet) View(now int64) View {
 			continue
 		}
 		v.Sessions = append(v.Sessions, sv)
-		if sv.Status != derive.StatusDone {
+		if sv.Status != derive.StatusDone && sv.Status != derive.StatusInterrupted {
 			for _, c := range e.T.Calls {
-				if c.File != "" {
-					touches = append(touches, derive.FileTouch{Session: sv.SessionID, Path: c.File, TS: c.Start, Edit: c.Edit})
+				for _, file := range c.Paths() {
+					touches = append(touches, derive.FileTouch{Session: sv.SessionID, Path: file, TS: c.Start, Edit: c.Edit})
 				}
 			}
 		}
@@ -114,6 +124,8 @@ func (f *Fleet) View(now int64) View {
 		}
 		if s.LastEventAt >= midnight {
 			v.Stats.TokensToday += s.TokensIn + s.TokensOut
+			v.Stats.TokensKnown = v.Stats.TokensKnown || s.TokensKnown
+			v.Stats.TokensPartial = v.Stats.TokensPartial || !s.TokensKnown
 		}
 		if s.Need != nil {
 			v.Needs = append(v.Needs, NeedItem{SessionID: s.SessionID, Name: s.Name, Need: *s.Need})
@@ -134,6 +146,9 @@ func (f *Fleet) View(now int64) View {
 // hidden: dismissed with no activity since, or idle/done longer than the auto-hide setting.
 // Activity (not LastEventAt) is the clock: status-line refreshes keep arriving for idle sessions.
 func (f *Fleet) hidden(e *entry, status string, now int64) bool {
+	if e.forkPending || codex.BackgroundSession(e.S) {
+		return true
+	}
 	last := e.T.LastActivity
 	if last == 0 {
 		last = e.S.StartedAt
@@ -141,7 +156,7 @@ func (f *Fleet) hidden(e *entry, status string, now int64) bool {
 	if e.S.DismissedAt > 0 && e.S.DismissedAt >= last {
 		return true
 	}
-	quiet := status == derive.StatusDone || status == derive.StatusIdle
+	quiet := status == derive.StatusDone || status == derive.StatusIdle || status == derive.StatusInterrupted
 	return quiet && f.hideAfter > 0 && now-last > f.hideAfter
 }
 
@@ -160,6 +175,10 @@ func (f *Fleet) SessionView(id string, now int64) (SessionView, bool) {
 func buildView(e *entry, now int64) SessionView {
 	t := &e.T
 	sv := SessionView{Session: e.S, Recent: []CallView{}, Timeline: []Block{}}
+	sv.Capabilities = Capabilities{ManagedTerminal: sv.Provider == model.ProviderClaude || sv.Provider == "", Resume: sv.NativeID != "", Telemetry: "reported"}
+	if sv.Provider == model.ProviderCodex {
+		sv.Capabilities.Telemetry = "hooks; session context and cost unavailable; account usage is on the Limits page"
+	}
 	sv.Status, sv.Loop = derive.Status(t, now)
 	sv.Ctx = derive.CtxAdvice(sv.CtxPct)
 	if sv.Name == "" {
@@ -192,13 +211,12 @@ func buildView(e *entry, now int64) SessionView {
 	}
 	edited, read := map[string]bool{}, map[string]bool{}
 	for _, c := range t.Calls {
-		if c.File == "" {
-			continue
-		}
-		if c.Edit {
-			edited[c.File] = true
-		} else {
-			read[c.File] = true
+		for _, file := range c.Paths() {
+			if c.Edit {
+				edited[file] = true
+			} else {
+				read[file] = true
+			}
 		}
 	}
 	for f := range read {
@@ -214,6 +232,9 @@ func buildView(e *entry, now int64) SessionView {
 			state = "fail"
 		} else if c.End > 0 {
 			state = "ok"
+			if c.Outcome == "unknown" {
+				state = "unknown"
+			}
 		}
 		sv.Recent = append(sv.Recent, CallView{Tool: c.Tool, Summary: c.Summary, State: state})
 	}

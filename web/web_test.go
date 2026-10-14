@@ -21,9 +21,14 @@ func TestAssetsEmbedded(t *testing.T) {
 		}
 	}
 	lim, _ := fs.ReadFile(FS, "limits.html")
-	for _, ref := range []string{"theme.css", "limits.css", "limits.js", "TRK.EXE"} {
+	for _, ref := range []string{"theme.css", "limits.css", "limits.js", "codex-limits.js", "TRK.EXE"} {
 		if !strings.Contains(string(lim), ref) {
 			t.Errorf("limits.html lacks %s", ref)
+		}
+	}
+	for _, match := range regexp.MustCompile(`(?:src|href)="([^"]+\.(?:js|css))"`).FindAllSubmatch(lim, -1) {
+		if _, err := fs.Stat(FS, string(match[1])); err != nil {
+			t.Errorf("Limits asset not embedded: %s: %v", match[1], err)
 		}
 	}
 	st, _ := fs.ReadFile(FS, "stats.html")
@@ -44,7 +49,7 @@ func TestAssetsEmbedded(t *testing.T) {
 
 // Agent-supplied text must never be parsed as HTML.
 func TestNoInnerHTML(t *testing.T) {
-	for _, f := range []string{"app.js", "editor.js", "limits.js", "stats.js", "term.js", "agents.js", "term.html"} {
+	for _, f := range []string{"app.js", "editor.js", "limits.js", "codex-limits.js", "stats.js", "term.js", "agents.js", "term.html"} {
 		js, _ := os.ReadFile(f)
 		if regexp.MustCompile(`innerHTML|outerHTML|insertAdjacentHTML|document\.write`).Match(js) {
 			t.Fatalf("%s uses an HTML-parsing sink", f)

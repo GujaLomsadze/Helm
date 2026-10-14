@@ -1,0 +1,19 @@
+[
+  {"session_id":"codex-fixture","cwd":"/repo","model":"fixture-model","hook_event_name":"SessionStart","source":"startup"},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"UserPromptSubmit","turn_id":"turn-1","prompt":"Fix the tests"},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"PreToolUse","turn_id":"turn-1","tool_name":"Bash","tool_use_id":"shell-1","tool_input":{"command":"go test ./..."}},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"PermissionRequest","turn_id":"turn-1","tool_name":"Bash","tool_input":{"command":"go test ./..."}},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"PostToolUse","turn_id":"turn-1","tool_name":"Bash","tool_use_id":"shell-1","tool_input":{"command":"go test ./..."},"tool_response":"Process exited with code 1\nFinal output:\nFAIL"},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"PreToolUse","turn_id":"turn-1","tool_name":"apply_patch","tool_use_id":"patch-1","tool_input":{"command":"*** Begin Patch\n*** Update File: main.go\n@@\n-old\n+new\n*** Move to: src/main.go\n*** Delete File: old.go\n*** Add File: new.go\n+new\n*** End Patch"}},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"PostToolUse","turn_id":"turn-1","tool_name":"apply_patch","tool_use_id":"patch-1","tool_input":{"command":"*** Begin Patch\n*** Update File: main.go\n*** Move to: src/main.go\n*** Delete File: old.go\n*** Add File: new.go\n*** End Patch"},"tool_response":"Success. Updated files."},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"PreCompact","turn_id":"turn-1","trigger":"auto"},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"PostCompact","turn_id":"turn-1","trigger":"auto"},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"SubagentStart","turn_id":"turn-1","agent_id":"child-1","agent_type":"explorer"},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"SubagentStop","turn_id":"turn-1","agent_id":"child-1","agent_type":"explorer","last_assistant_message":"Checked the files"},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"Stop","turn_id":"turn-1","last_assistant_message":"Updated the tests"},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"SessionStart","source":"resume"},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"UserPromptSubmit","turn_id":"turn-2","prompt":"Run another check"},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"PreToolUse","turn_id":"turn-2","tool_name":"Bash","tool_use_id":"shell-1","tool_input":{"command":"go test ./..."}},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"Interrupt","turn_id":"turn-2"},
+  {"session_id":"codex-fixture","cwd":"/repo","hook_event_name":"SessionEnd","reason":"other"}
+]

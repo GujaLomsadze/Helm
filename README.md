@@ -27,6 +27,28 @@ Worried about your Claude setup? Read [How TRK works with Claude Code](#how-trk-
 
 You never need to run `trk serve` yourself: the first `trk` call that finds no daemon starts one in the background.
 
+### Codex
+
+This checkout also supports passive tracking through Codex hooks (verified CLI surface: 0.162.1). Build this checkout to use the integration:
+
+```sh
+go build -o bin/trk ./cmd/trk  # on Windows: -o bin/trk.exe
+bin/trk init --agent codex --dry-run
+bin/trk init --agent codex
+# Restart Codex and review/trust the TRK entries in /hooks.
+bin/trk open
+```
+
+The installer merges `$CODEX_HOME/hooks.json` (default `~/.codex/hooks.json`), preserves other handlers, and backs up changed files. It leaves Codex trust and `config.toml` to Codex. To add optional progress instructions to a chosen file, pass `--agents-md /path/to/AGENTS.md`; no instruction file is edited by default.
+
+Codex cards report prompts, replies, tool activity, permission waits, interruptions, and patch files alongside Claude cards. Fleet cards and Stats have provider filters. Session context, tokens, and cost are unavailable from this hook adapter; missing readings appear as unavailable, and mixed totals are partial. Codex terminals are externally owned; the drawer offers a resume command to copy.
+
+The **Limits** page shows Codex account quota usage and reset times above the Claude charts, with both accounts visible together. TRK uses a short-lived App Server connection and the read-only `account/rateLimits/read` method, cached for one minute while viewed. It displays the actual returned windows and marks missing/stale readings; Codex usage history and pace projections are not yet collected. The **Claude Code** section retains the existing charts. If the CLI is not found, set `TRK_CODEX_COMMAND` to its native executable and restart TRK. No additional hook trust or API key is needed when Codex is already signed in with ChatGPT.
+
+For declared progress, use `trk codex start "task" --steps 3`, `trk codex step "testing"`, `trk codex progress 2/3`, `trk codex blocked "question"`, and `trk codex done "result"`. `TRK_SESSION` selects an explicit native ID; otherwise `CODEX_THREAD_ID` is used when present. Directory matching is best effort and does not choose between multiple matching Codex sessions.
+
+See the [implementation plan and validation record](docs/codex-support-plan.md) and [project guide](PROJECT_GUIDE.md). Local desktop hook delivery has now been observed. Codex's automatic next-message suggestion forks are excluded from cards and statistics using their specific app-generated prompt preamble; real user chats and forks remain separate. Their raw history is preserved. Broader lifecycle, IDE, and cloud coverage still need separate validation.
+
 ## The dashboard
 
 Three pages, all at `http://localhost:7777`:

@@ -5,6 +5,7 @@ import "encoding/json"
 
 // Envelope is what clients POST to /v1/events.
 type Envelope struct {
+	Provider   string          `json:"provider,omitempty"`
 	TS         int64           `json:"ts,omitempty"`          // unix ms at the caller
 	Source     string          `json:"source"`                // cli|hook|statusline|api
 	Kind       string          `json:"kind,omitempty"`        // empty for hook/statusline: derived by the daemon
@@ -15,6 +16,9 @@ type Envelope struct {
 }
 
 type Event struct {
+	Provider    string          `json:"provider,omitempty"`
+	NativeID    string          `json:"native_session_id,omitempty"`
+	EventKey    string          `json:"-"` // stable adapter key, when the native event has an identity
 	ID          int64           `json:"id"`
 	TS          int64           `json:"ts"`
 	SessionID   string          `json:"session_id"`
@@ -25,6 +29,11 @@ type Event struct {
 }
 
 type Session struct {
+	Provider    string   `json:"provider"`
+	NativeID    string   `json:"native_session_id,omitempty"`
+	CostKnown   bool     `json:"cost_known"`
+	TokensKnown bool     `json:"tokens_known"`
+	TimeKnown   bool     `json:"time_known"`
 	SessionID   string   `json:"session_id"`
 	Name        string   `json:"name"`
 	Title       string   `json:"title,omitempty"` // chosen in the dashboard; shown instead of Name
@@ -68,6 +77,13 @@ type Account struct {
 }
 
 const (
+	ProviderClaude    = "claude"
+	ProviderCodex     = "codex"
+	ProviderGeneric   = "generic"
+	KindInterrupt     = "interrupt"
+	KindSubagentStart = "subagent_start"
+	KindCompacted     = "compacted"
+
 	SourceCLI        = "cli"
 	SourceHook       = "hook"
 	SourceStatusline = "statusline"

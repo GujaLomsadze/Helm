@@ -16,6 +16,8 @@
   <div class="stats" id="stats"></div>
   <div class="limits" id="limits"></div>
   <nav class="nav" aria-label="views">
+    <label class="meta" for="provider-filter">Cards</label>
+    <select id="provider-filter" aria-label="Agent provider"><option value="">All</option><option value="claude">Claude</option><option value="codex">Codex</option><option value="generic">Other</option></select>
     <a class="btn btn-secondary active" href="./" aria-current="page">Fleet</a>
     <a class="btn btn-secondary" href="limits.html">Limits</a>
     <a class="btn btn-secondary" href="stats.html">Stats</a>
@@ -39,7 +41,7 @@
 <div class="stopped" id="stopped" hidden>
   <div class="panel stopped-box" role="status">
     <h2>TRK stopped</h2>
-    <p>Claude keeps working normally; nothing is recorded while TRK is off.</p>
+    <p>External agents keep working normally; nothing is recorded while TRK is off.</p>
     <p>Start it again from a terminal:</p>
     <code>trk open</code>
   </div>
