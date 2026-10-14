@@ -28,6 +28,8 @@
     <button type="button" data-r="30" aria-pressed="false">30 days</button>
   </div>
   <span class="st-lab">Repos</span>
+  <label class="st-lab" for="provider-filter">Agent</label>
+  <select id="provider-filter"><option value="">All</option><option value="claude">Claude</option><option value="codex">Codex</option><option value="generic">Other</option></select>
   <div class="st-chips" id="repos" role="group" aria-label="repos"></div>
 </div>
 
@@ -35,13 +37,13 @@
 
 <main class="st-grid">
   <section class="panel st-card st-wide">
-    <div class="st-head"><h2>Spend per day</h2><span class="st-q">Where does the money go?</span></div>
+    <div class="st-head"><h2>Reported spend per day</h2><span class="st-q">Only sessions that report cost contribute.</span></div>
     <div id="spend"></div>
     <div class="st-legend" id="spend-legend"></div>
   </section>
 
   <section class="panel st-card">
-    <div class="st-head"><h2>Where the time goes</h2><span class="st-q">Busy model, busy tools, or waiting on you?</span></div>
+    <div class="st-head"><h2>Recorded time</h2><span class="st-q">Partial when model duration is unavailable.</span></div>
     <div class="st-legend"><span><i class="st-sw" style="background:var(--t-model)"></i>model working</span><span><i class="st-sw" style="background:var(--t-tools)"></i>tools running</span><span><i class="st-sw" style="background:var(--t-wait)"></i>waiting on you</span></div>
     <div class="st-split" id="split"></div>
   </section>

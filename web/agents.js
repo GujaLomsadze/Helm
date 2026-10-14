@@ -138,6 +138,22 @@ window.TRKAgents = (function () {
   function drawSession(sid, force) {
     const s = session(sid);
     if (!s) return show("new");
+    if (s.capabilities && !s.capabilities.managed_terminal) {
+      dropViewer();
+      const id = s.native_session_id;
+      const cmd = s.provider === "codex" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(id || "") ? "codex resume " + id : "";
+      const copy = cmd ? h("button", { type: "button", class: "btn btn-secondary" }, "Copy resume command") : null;
+      if (copy) copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(cmd); copy.textContent = "Copied"; } catch { copy.textContent = "Copy the command below"; } });
+      main.replaceChildren(h("div", { class: "ag-ext" },
+        h("h3", null, providerName(s) + " · " + s.name),
+        h("p", null, "Observed activity. Start or resume this agent in its own application or terminal."),
+        h("p", { class: "meta" }, s.capabilities.telemetry),
+        h("p", { class: "meta" }, s.cwd), h("code", null, id || sid),
+        s.last_prompt ? h("p", null, s.last_prompt) : null,
+        s.last_reply ? h("p", null, s.last_reply) : null,
+        cmd ? h("p", null, h("code", null, cmd)) : null, copy));
+      return;
+    }
     const elsewhere = !!(view.running && sid in view.running);
     // busy but no claude process seen (e.g. it reported before TRK learned its pid): maybe still running
     const maybe = !elsewhere && !["idle", "done"].includes(s.status);

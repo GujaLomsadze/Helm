@@ -1,28 +1,33 @@
 package store
 
-import "database/sql"
+import (
+	"database/sql"
+	"encoding/json"
+)
 
 // StatRow is one event cut down to the fields the Stats page reads. Status-line rows carry the
 // cumulative counters (cost, model time, tokens) and context use; tool rows carry the tool, its
 // id, and the command or file it worked on. Missing fields are zero / empty.
 type StatRow struct {
-	TS        int64
-	Session   string
-	Kind      string
-	Tool      string
-	ToolUseID string
-	Command   string
-	File      string
-	Cost      float64 // cumulative for the claude process, USD
-	APIMs     float64 // cumulative model time, ms
-	Tokens    float64 // cumulative input + output tokens
-	Ctx       float64 // context used, %
-	HasStatus bool    // the status-line counters above are present
-	HasCtx    bool
+	Files                      []string
+	HasCost, HasTokens, HasAPI bool
+	TS                         int64
+	Session                    string
+	Kind                       string
+	Tool                       string
+	ToolUseID                  string
+	Command                    string
+	File                       string
+	Cost                       float64 // cumulative for the claude process, USD
+	APIMs                      float64 // cumulative model time, ms
+	Tokens                     float64 // cumulative input + output tokens
+	Ctx                        float64 // context used, %
+	HasStatus                  bool    // the status-line counters above are present
+	HasCtx                     bool
 }
 
 // statKinds are the event kinds the Stats page uses.
-const statKinds = `('status','tool_pre','tool_post','tool_fail','permission','notification','prompt','stop','session_end')`
+const statKinds = `('status','tool_pre','tool_post','tool_fail','permission','notification','prompt','stop','session_end','interrupt')`
 
 const statCols = `ts, coalesce(session_id,''), kind,
   json_extract(payload,'$.tool_name'), json_extract(payload,'$.tool_use_id'),
@@ -30,7 +35,7 @@ const statCols = `ts, coalesce(session_id,''), kind,
   coalesce(json_extract(payload,'$.tool_input.file_path'), json_extract(payload,'$.tool_input.notebook_path')),
   json_extract(payload,'$.cost.total_cost_usd'), json_extract(payload,'$.cost.total_api_duration_ms'),
   json_extract(payload,'$.context_window.total_input_tokens'), json_extract(payload,'$.context_window.total_output_tokens'),
-  json_extract(payload,'$.context_window.used_percentage')`
+  json_extract(payload,'$.context_window.used_percentage'), json_extract(payload,'$.tool_files')`
 
 // StatRows returns the Stats page's events in [since, until), oldest first.
 func (s *Store) StatRows(since, until int64) ([]StatRow, error) {
@@ -54,7 +59,7 @@ func (s *Store) StatRows(since, until int64) ([]StatRow, error) {
 // grew from (they are cumulative per claude process).
 func (s *Store) LastStatus(session string, before int64) (StatRow, bool, error) {
 	row := s.db.QueryRow(`SELECT `+statCols+` FROM events WHERE session_id = ? AND ts < ? AND kind = 'status'
-  AND json_extract(payload,'$.cost.total_cost_usd') IS NOT NULL ORDER BY ts DESC, id DESC LIMIT 1`, session, before)
+  AND (json_extract(payload,'$.cost.total_cost_usd') IS NOT NULL OR json_extract(payload,'$.context_window.total_input_tokens') IS NOT NULL OR json_extract(payload,'$.context_window.total_output_tokens') IS NOT NULL OR json_extract(payload,'$.cost.total_api_duration_ms') IS NOT NULL) ORDER BY ts DESC, id DESC LIMIT 1`, session, before)
 	r, err := scanStat(row)
 	if err == sql.ErrNoRows {
 		return StatRow{}, false, nil
@@ -66,13 +71,15 @@ type scanner interface{ Scan(...any) error }
 
 func scanStat(sc scanner) (StatRow, error) {
 	var r StatRow
-	var tool, id, cmd, file sql.NullString
+	var tool, id, cmd, file, files sql.NullString
 	var cost, api, tin, tout, ctx sql.NullFloat64
-	if err := sc.Scan(&r.TS, &r.Session, &r.Kind, &tool, &id, &cmd, &file, &cost, &api, &tin, &tout, &ctx); err != nil {
+	if err := sc.Scan(&r.TS, &r.Session, &r.Kind, &tool, &id, &cmd, &file, &cost, &api, &tin, &tout, &ctx, &files); err != nil {
 		return r, err
 	}
 	r.Tool, r.ToolUseID, r.Command, r.File = tool.String, id.String, cmd.String, file.String
-	if cost.Valid {
+	_ = json.Unmarshal([]byte(files.String), &r.Files)
+	r.HasCost, r.HasTokens, r.HasAPI = cost.Valid, tin.Valid || tout.Valid, api.Valid
+	if cost.Valid || api.Valid || tin.Valid || tout.Valid {
 		r.HasStatus = true
 		r.Cost, r.APIMs, r.Tokens = cost.Float64, api.Float64, tin.Float64+tout.Float64
 	}
