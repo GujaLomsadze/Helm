@@ -15,6 +15,12 @@ the app leaves the tracker and managed agents running. Use the dashboard's power
 button to stop them. Double-clicking the app again focuses its existing window.
 Browser layout preferences are separate from Electron's persistent preferences.
 
+The **Schedules** page runs one-time or recurring Claude/Codex tasks. Enable
+Terminals in Fleet's Card layout settings, then choose a task's folder, prompt,
+and run time. Scheduling continues with the window closed while the backend is
+running and the computer is awake. See [task scheduling](../README.md#task-scheduling)
+for recurrence, permission behavior, and saved run history.
+
 ## Development and packaging
 
 From `desktop/`, with Node.js 22.12 or newer and the Go version in the root `go.mod` installed:

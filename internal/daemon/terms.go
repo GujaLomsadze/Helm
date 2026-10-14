@@ -109,7 +109,7 @@ func (s *Server) applyTitle(sid, title string) {
 func (s *Server) SetTerminals(on bool) { s.termsOn.Store(on); s.dirty.Store(true) }
 
 // CloseTerminals kills every dashboard-started agent; Run calls it on shutdown.
-func (s *Server) CloseTerminals() { s.terms.Close() }
+func (s *Server) CloseTerminals() { s.closeScheduledRuns(); s.terms.Close() }
 
 func (s *Server) listTerms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"enabled": s.termsOn.Load(), "running": s.terms.Running(), "terminals": s.terms.List()})

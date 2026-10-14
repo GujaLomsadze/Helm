@@ -5,6 +5,7 @@ package term
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
@@ -19,6 +20,11 @@ type windowsTerminal struct {
 	done chan struct{}
 	err  error
 }
+
+type processExitError uint32
+
+func (e processExitError) Error() string { return fmt.Sprintf("process exited with code %d", e) }
+func (e processExitError) ExitCode() int { return int(e) }
 
 func (p *windowsTerminal) Close() error {
 	p.once.Do(func() { _ = p.ConPty.Close() })
@@ -49,7 +55,11 @@ func startPty(cmd *exec.Cmd, cols, rows uint16) (terminalProcess, error) {
 	}
 	p := &windowsTerminal{ConPty: c, done: make(chan struct{})}
 	go func() {
-		_, p.err = c.Wait(context.Background())
+		code, err := c.Wait(context.Background())
+		p.err = err
+		if err == nil && code != 0 {
+			p.err = processExitError(code)
+		}
 		// The reader drains output concurrently with ClosePseudoConsole.
 		_ = p.Close()
 		close(p.done)

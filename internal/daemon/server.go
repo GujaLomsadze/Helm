@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -36,6 +37,8 @@ type Server struct {
 	termsOn     atomic.Bool
 	stats       statsCache
 	codexLimits codexLimitsCache
+	scheduleMu  sync.Mutex
+	scheduled   map[string]*scheduledRun
 	// OnShutdown stops the daemon; set by Run. Used by `trk update` to restart into the new binary.
 	OnShutdown func()
 	// OnStop pauses TRK (hooks stop respawning it) and then shuts down; set by Run.
@@ -43,7 +46,7 @@ type Server struct {
 }
 
 func NewServer(st *store.Store, fl *fleet.Fleet, logger *log.Logger) *Server {
-	s := &Server{st: st, fl: fl, hub: NewHub(), log: logger, now: func() int64 { return time.Now().UnixMilli() }, terms: term.NewManager()}
+	s := &Server{st: st, fl: fl, hub: NewHub(), log: logger, now: func() int64 { return time.Now().UnixMilli() }, terms: term.NewManager(), scheduled: make(map[string]*scheduledRun)}
 	s.terms.OnChange = func() { s.dirty.Store(true) }
 	return s
 }
@@ -60,6 +63,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/terms", s.startTerm)
 	mux.HandleFunc("DELETE /v1/terms/{id}", s.stopTerm)
 	mux.HandleFunc("GET /v1/terms/{id}/ws", s.attachTerm)
+	mux.HandleFunc("GET /v1/schedules", s.listSchedules)
+	mux.HandleFunc("POST /v1/schedules", s.createSchedule)
+	mux.HandleFunc("PUT /v1/schedules/{id}", s.updateSchedule)
+	mux.HandleFunc("DELETE /v1/schedules/{id}", s.deleteSchedule)
+	mux.HandleFunc("POST /v1/schedules/{id}/enabled", s.enableSchedule)
+	mux.HandleFunc("POST /v1/schedules/{id}/run", s.runScheduleNow)
+	mux.HandleFunc("POST /v1/schedules/{id}/stop", s.stopScheduleRun)
+	mux.HandleFunc("GET /v1/schedules/{id}/runs", s.listScheduleRuns)
 	mux.HandleFunc("GET /v1/account", s.getAccount)
 	mux.HandleFunc("GET /v1/limits/history", s.getLimitHistory)
 	mux.HandleFunc("GET /v1/codex/limits", s.getCodexLimits)

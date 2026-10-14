@@ -16,6 +16,17 @@ import (
 
 // A fake interactive agent exercises the real native terminal and HTTP bridge.
 func TestMain(m *testing.M) {
+	if os.Getenv("TRK_TEST_SCHEDULE_HELPER") == "1" {
+		prompt := os.Args[len(os.Args)-1]
+		fmt.Println("SCHEDULE-RESULT:" + prompt)
+		if prompt == "hold" {
+			bufio.NewScanner(os.Stdin).Scan()
+		}
+		if prompt == "fail" {
+			os.Exit(7)
+		}
+		os.Exit(0)
+	}
 	if os.Getenv("TRK_TEST_AGENT_HELPER") == "1" {
 		fmt.Println("AGENT-READY")
 		s := bufio.NewScanner(os.Stdin)

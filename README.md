@@ -84,11 +84,51 @@ See the [implementation plan and validation record](docs/codex-support-plan.md) 
 
 ## The dashboard
 
-Three pages, all at `http://localhost:7777`:
+Four pages, all at `http://localhost:7777`:
 
 - **Fleet:** one card per agent with its task, progress, status, context gauge, last prompt and reply, files touched and more. Cards glow by status (a pulsing amber card is waiting on you). Click a card to open its [agent drawer](#agents-in-the-dashboard). In the drawer, **✎** gives the card a title of your own. Titles are stored by TRK, so every browser shows them. **⚙ Card layout** picks the widgets, footer stats, grid size and which areas to show (Needs you and Collisions start hidden; the cards' chips already show both).
 - **Limits:** your 5-hour and weekly plan usage, one full-width chart each, with an "at this pace" projection. The verdict says **Perfect pace** within ±5% of the safe pace, **Good pace** with headroom, and **Slow down** only when you'd run out before the reset.
 - **Stats:** history for today, 7 or 30 days, filterable by repo. It shows spend per day by repo; where session time goes (model working, tools running, waiting on you); how long prompts wait for you; a weekday × hour activity grid; top tools with failures; the slowest commands; the most-touched files; how full each session's context got; and a sortable sessions table.
+- **Schedules:** one-time and recurring Claude/Codex tasks, with pause/resume, manual runs, time limits, and persistent run history and output.
+
+## Task scheduling
+
+Open **Schedules → + Schedule task**, choose Claude Code or Codex, enter an
+absolute project folder and instructions, and choose the first run time. Tasks
+can run once, every interval, daily, or weekly. Enable **Fleet → ⚙ Card layout →
+Terminals** to allow execution. Each run starts a fresh batch session using
+`claude --print` or `codex --no-daemon exec`, with the CLI's existing sign-in and
+permission settings. TRK does not automatically approve permissions or hook trust.
+
+Schedules are stored in the TRK database and keep running when the desktop window
+is closed. The tracker must remain running and the computer awake; scheduling
+does not wake the computer or start TRK at Windows sign-in. If TRK was unavailable,
+missed occurrences are combined into one run when it returns. A task never
+overlaps its own running instance; tasks wait when all agent slots are occupied.
+The default time limit is 60 minutes and can be changed per task.
+
+Use **Pause/Resume** to control future occurrences; pausing leaves the current
+run alone. **Run now** adds an extra run without changing the next scheduled
+occurrence. **Stop run** ends the current run. **History** shows the last 30 runs,
+their exit status, and the last 64 KiB of captured terminal output per run.
+Successful means the CLI exited with code zero; review its output for the task's
+actual result. Running tasks interrupted by a tracker restart are recorded as
+interrupted and are not automatically retried. Edit a completed one-time task
+with a future date to schedule it again, or use Run now.
+
+Daily and weekly schedules retain the timezone of the browser that creates them
+and keep the same local time across daylight saving changes. A nonexistent
+spring-forward time is skipped; a repeated autumn time runs once. Interval
+schedules use elapsed minutes. The First run input is shown in the browser's
+current timezone; the form also displays the timezone used for recurrence.
+
+The local API exposes `GET/POST /v1/schedules`, `PUT/DELETE /v1/schedules/{id}`,
+`POST /v1/schedules/{id}/enabled` with `{"enabled": false}` or `true`,
+`POST /v1/schedules/{id}/run`, `POST /v1/schedules/{id}/stop`, and
+`GET /v1/schedules/{id}/runs`. Creation and edits take `name`, `provider`, `dir`,
+`prompt`, `repeat` (`once`, `interval`, `daily`, `weekly`), `run_at` (Unix
+milliseconds), `every_minutes` (interval only), `timezone` (IANA name), and
+`timeout_minutes`. All routes use the same local Host/Origin checks as the dashboard.
 
 ## Agents in the dashboard
 

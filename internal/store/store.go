@@ -64,6 +64,11 @@ UPDATE sessions SET native_id=session_id WHERE provider='claude';
 UPDATE sessions SET cost_known=EXISTS(SELECT 1 FROM events e WHERE e.session_id=sessions.session_id AND json_extract(e.payload,'$.cost.total_cost_usd') IS NOT NULL),
 tokens_known=EXISTS(SELECT 1 FROM events e WHERE e.session_id=sessions.session_id AND (json_extract(e.payload,'$.context_window.total_input_tokens') IS NOT NULL OR json_extract(e.payload,'$.context_window.total_output_tokens') IS NOT NULL)),
 time_known=EXISTS(SELECT 1 FROM events e WHERE e.session_id=sessions.session_id AND json_extract(e.payload,'$.cost.total_api_duration_ms') IS NOT NULL);
+`, `
+CREATE TABLE schedules(id TEXT PRIMARY KEY, config TEXT NOT NULL, enabled INTEGER NOT NULL, next_run_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE schedule_runs(id TEXT PRIMARY KEY, job_id TEXT NOT NULL, status TEXT NOT NULL, scheduled_at INTEGER NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER NOT NULL DEFAULT 0, terminal_id TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '', exit_code INTEGER, error TEXT NOT NULL DEFAULT '', output TEXT NOT NULL DEFAULT '');
+CREATE INDEX schedule_runs_job ON schedule_runs(job_id, started_at DESC);
+CREATE UNIQUE INDEX schedule_one_running ON schedule_runs(job_id) WHERE status='running';
 `}
 
 var ErrDuplicate = errors.New("event already stored")

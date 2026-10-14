@@ -12,7 +12,7 @@ function originForPort(value) {
 function dashboardURL(value, origin) {
   try {
     const u = new URL(value);
-    return u.origin === origin && !u.username && !u.password && ["/", "/index.html", "/limits.html", "/stats.html", "/term.html"].includes(u.pathname);
+    return u.origin === origin && !u.username && !u.password && ["/", "/index.html", "/limits.html", "/stats.html", "/schedules.html", "/term.html"].includes(u.pathname);
   } catch { return false; }
 }
 

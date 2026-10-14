@@ -10,6 +10,7 @@ test("only local tracker pages can navigate inside the app", () => {
   assert.equal(origin, "http://127.0.0.1:7777");
   for (const value of ["0", "65536", "hello", "4.2"]) assert.throws(() => originForPort(value));
   assert.equal(dashboardURL(origin + "/term.html?id=abc", origin), true);
+  assert.equal(dashboardURL(origin + "/schedules.html", origin), true);
   for (const value of ["https://example.com", "file:///C:/secret", "javascript:alert(1)", "http://127.0.0.1:7778/", origin + "/v1/shutdown", "http://user@127.0.0.1:7777/"]) assert.equal(dashboardURL(value, origin), false);
 });
 

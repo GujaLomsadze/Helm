@@ -32,6 +32,7 @@ var ErrUnsupported = errors.New("terminals are not supported on this platform")
 // Spec says what to run. Resume continues an existing conversation by session id;
 // Fork (with Resume) continues a copy of it under a new id, leaving the original alone.
 type Spec struct {
+	Batch    bool   `json:"-"` // scheduled one-shot run; interactive API callers cannot set it
 	Provider string `json:"provider,omitempty"`
 	Dir      string `json:"dir"`
 	Prompt   string `json:"prompt"`
@@ -58,6 +59,7 @@ type Info struct {
 	Started   int64  `json:"started"` // unix ms
 	PID       int    `json:"pid"`
 	Exited    bool   `json:"exited"`
+	ExitCode  *int   `json:"exit_code,omitempty"`
 }
 
 type Manager struct {
@@ -138,6 +140,9 @@ func (m *Manager) Start(sp Spec) (*Term, error) {
 func args(sp Spec) []string {
 	if sp.Provider == "codex" {
 		a := []string{"--no-daemon"}
+		if sp.Batch {
+			return append(a, "exec", "--color", "never", "--", strings.TrimSpace(sp.Prompt))
+		}
 		if sp.Resume != "" {
 			if sp.Fork {
 				a = append(a, "fork")
@@ -152,6 +157,9 @@ func args(sp Spec) []string {
 		return a
 	}
 	var a []string
+	if sp.Batch {
+		return []string{"--print", "--", strings.TrimSpace(sp.Prompt)}
+	}
 	if sp.Resume != "" {
 		a = append(a, "--resume", sp.Resume)
 		if sp.Fork {
@@ -296,6 +304,13 @@ func (t *Term) Info() Info {
 	return t.info
 }
 
+// Output returns a copy of the bounded terminal scrollback for persisted run history.
+func (t *Term) Output() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return string(t.ring.bytes())
+}
+
 type terminalProcess interface {
 	io.ReadWriteCloser
 	Pid() int
@@ -358,10 +373,18 @@ func (t *Term) pump(changed func()) {
 			break
 		}
 	}
-	_ = t.f.Wait()
+	err := t.f.Wait()
+	code := 0
+	if err != nil {
+		code = -1
+		if e, ok := err.(interface{ ExitCode() int }); ok {
+			code = e.ExitCode()
+		}
+	}
 	_ = t.f.Close()
 	t.mu.Lock()
 	t.done, t.info.Exited = true, true
+	t.info.ExitCode = &code
 	for ch := range t.subs {
 		close(ch)
 	}

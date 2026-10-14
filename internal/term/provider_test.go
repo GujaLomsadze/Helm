@@ -12,6 +12,8 @@ func TestCodexArgumentsAndIdentity(t *testing.T) {
 		spec Spec
 		want []string
 	}{
+		{Spec{Provider: "codex", Batch: true, Prompt: "literal & prompt"}, []string{"--no-daemon", "exec", "--color", "never", "--", "literal & prompt"}},
+		{Spec{Provider: "claude", Batch: true, Prompt: "literal & prompt"}, []string{"--print", "--", "literal & prompt"}},
 		{Spec{Provider: "codex", Prompt: `--help; "quoted" & literal`}, []string{"--no-daemon", "--", `--help; "quoted" & literal`}},
 		{Spec{Provider: "codex", Resume: "abc-123"}, []string{"--no-daemon", "resume", "abc-123"}},
 		{Spec{Provider: "codex", Resume: "abc-123", Fork: true, Prompt: "continue"}, []string{"--no-daemon", "fork", "abc-123", "--", "continue"}},
