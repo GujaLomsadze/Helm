@@ -86,6 +86,8 @@ ul { list-style: none; margin: 0; padding: 0; }
 .card { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .card.attention { border-color: var(--hot); }
 .card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.provider-badge { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+.provider-logo { width: 16px; height: 16px; flex: none; object-fit: contain; }
 .card-name { font: 600 16px/1.3 var(--font-read); margin: 0; overflow-wrap: anywhere; }
 .task { margin: 0; overflow-wrap: anywhere; }
 .step { color: var(--muted); overflow-wrap: anywhere; }
@@ -354,6 +356,14 @@ dialog.agents.resizing .ag-term { pointer-events: none; }
 .ag-from { font-size: 12px; color: var(--ok); }
 .ag-opt { text-transform: none; letter-spacing: 0; color: var(--cell-off); }
 .ag-lab { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 6px; }
+.ag-provider-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ag-provider-option { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 54px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--muted); font: 600 14px var(--font-read); cursor: pointer; text-align: left; transition: border-color .15s, background .15s, color .15s; }
+.ag-provider-option img { width: 22px; height: 22px; flex: none; }
+.ag-provider-option:hover { border-color: var(--muted); color: var(--text); }
+.ag-provider-option[aria-pressed="true"] { border-color: var(--accent); background: rgba(255,90,74,.09); color: var(--text); }
+.ag-provider-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.ag-provider-check { margin-left: auto; color: var(--accent); visibility: hidden; }
+.ag-provider-option[aria-pressed="true"] .ag-provider-check { visibility: visible; }
 .ag-form input, .ag-form textarea { background: var(--bg); color: var(--text); border: 1px solid var(--border); font: 14px var(--font-read); padding: 10px 12px; border-radius: var(--radius); width: 100%; }
 .ag-form textarea { min-height: 90px; resize: vertical; }
 .ag-recent { display: flex; flex-wrap: wrap; gap: 6px; }

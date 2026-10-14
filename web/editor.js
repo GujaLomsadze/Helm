@@ -86,7 +86,7 @@
         h("p", { class: "meta" }, "Applies to every browser. A hidden card comes back as soon as its session gets busy again; ✕ on a card hides it right away.")),
       view && view.terminals_supported ? h("section", { class: "ed-group" }, h("h3", null, "Terminals"),
         h("div", { class: "ed-row" }, toggle("opt:terminals", "Run agents in the dashboard", !!view.terminals_enabled)),
-        h("p", { class: "meta" }, "Adds “+ Agent”, and lets a card's drawer resume or fork its session: claude runs in a terminal right here. "
+        h("p", { class: "meta" }, "Adds “+ Agent” to launch Claude or Codex in a terminal right here. "
           + "Those agents run inside TRK and stop when TRK restarts, updates or is stopped; resume them from their cards. Applies to every browser.")) : null,
       h("section", { class: "ed-group" }, h("h3", null, "Dashboard areas"),
         h("div", { class: "ed-row" }, Object.entries(AREAS).map(([k, label]) => toggle("area:" + k, label, layout.areas[k])))));

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/GujaLomsadze/trk/internal/fleet"
+	"github.com/GujaLomsadze/trk/internal/model"
 	"github.com/GujaLomsadze/trk/internal/ptree"
 	"github.com/GujaLomsadze/trk/internal/term"
 	"github.com/gorilla/websocket"
@@ -48,14 +49,17 @@ func (s *Server) dash() dashView {
 func (s *Server) linkSessions(only map[string]bool) map[string]string {
 	out := map[string]string{}
 	pids := s.fl.ClaudePIDs()
-	if len(pids) == 0 {
-		return out
-	}
 	var live []term.Info
 	for _, t := range s.terms.List() {
 		if !t.Exited {
 			live = append(live, t)
+			if t.Provider == model.ProviderCodex && t.SessionID != "" {
+				out[t.SessionID] = t.ID
+			}
 		}
+	}
+	if len(pids) == 0 {
+		return out
 	}
 	tb := ptree.Snapshot()
 	for pid, sid := range pids {
@@ -67,7 +71,7 @@ func (s *Server) linkSessions(only map[string]bool) map[string]string {
 		}
 		owner := ""
 		for _, t := range live {
-			if tb.Descends(pid, t.PID) {
+			if t.Provider != model.ProviderCodex && tb.Descends(pid, t.PID) {
 				owner = t.ID
 				if s.terms.Link(t.ID, sid) && t.Title != "" {
 					s.titleOnce(sid, t.Title) // the name typed in "+ New agent"
@@ -127,15 +131,26 @@ func (s *Server) startTerm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sp.Title = title
+	if sp.Provider != "" && sp.Provider != model.ProviderClaude && sp.Provider != model.ProviderCodex {
+		http.Error(w, "unknown agent provider", http.StatusBadRequest)
+		return
+	}
+	sid := sp.SessionKey()
 	// Two claudes on one conversation would both append to its transcript.
 	if sp.Resume != "" && !sp.Fork {
-		if where, ok := s.linkSessions(map[string]bool{sp.Resume: true})[sp.Resume]; ok {
-			msg := "that session is still running in another terminal: stop claude there first, or fork it"
+		if where, ok := s.linkSessions(map[string]bool{sid: true})[sid]; ok {
+			msg := "that session is still running in another terminal: stop the agent there first, or fork it"
 			if where != "" {
 				msg = "that session is already running in a TRK terminal"
 			}
 			http.Error(w, msg, http.StatusConflict)
 			return
+		}
+		if sp.Provider == model.ProviderCodex {
+			if sv, ok := s.fl.SessionView(sid, s.now()); ok && sv.Status != "done" && sv.Status != "idle" && sv.Status != "interrupted" {
+				http.Error(w, "Codex session may still be active; stop it first or fork it", http.StatusConflict)
+				return
+			}
 		}
 	}
 	t, err := s.terms.Start(sp)
@@ -147,11 +162,11 @@ func (s *Server) startTerm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	s.log.Printf("terminal %s: %s %v in %s (pid %d)", t.Info().ID, s.terms.Command, sp.Resume, t.Info().Dir, t.Info().PID)
+	s.log.Printf("terminal %s: %s %v in %s (pid %d)", t.Info().ID, t.Info().Provider, sp.Resume, t.Info().Dir, t.Info().PID)
 	if sp.Resume != "" && !sp.Fork {
-		s.terms.DropExited(sp.Resume, t.Info().ID) // the resumed terminal replaces the one that ended
+		s.terms.DropExited(sid, t.Info().ID) // the resumed terminal replaces the one that ended
 		if sp.Title != "" {
-			s.applyTitle(sp.Resume, sp.Title) // a resume names a session we already know
+			s.applyTitle(sid, sp.Title) // a resume names a session we already know
 		}
 	}
 	w.WriteHeader(http.StatusCreated)

@@ -1,0 +1,36 @@
+{
+  "name": "trk-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TRK desktop agent monitor",
+  "author": "TRK contributors",
+  "license": "MIT",
+  "main": "main.cjs",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "start": "node scripts/build-backend.cjs && install-electron && electron .",
+    "test": "node --test test/*.test.cjs",
+    "pack": "node scripts/build-backend.cjs && electron-builder --dir",
+    "dist:win": "node scripts/build-backend.cjs && electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.trk.desktop",
+    "productName": "TRK",
+    "directories": { "output": "../dist/desktop" },
+    "files": ["main.cjs", "backend.cjs", "loading.html", "assets/**", "package.json"],
+    "extraResources": [{ "from": "resources", "to": "backend", "filter": ["trk", "trk.exe"] }],
+    "asar": true,
+    "win": { "target": "nsis", "icon": "assets/trk.ico" },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "TRK Setup ${version}.${ext}"
+    }
+  }
+}

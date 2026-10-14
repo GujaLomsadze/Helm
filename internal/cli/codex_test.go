@@ -10,9 +10,13 @@ import (
 func TestCodexHookAndReporting(t *testing.T) {
 	got := capture(t)
 	t.Setenv("TRK_SESSION", "wrong-inherited-id")
+	t.Setenv("TRK_TERMINAL_ID", "owned-terminal")
 	code, out := runIn(`{"session_id":"native","hook_event_name":"PreToolUse"}`, "codex-hook")
 	if code != 0 || out != "" || len(*got) != 1 || (*got)[0].Provider != "codex" || (*got)[0].ClaudePID != 0 || (*got)[0].SessionID != "" {
 		t.Fatalf("%d %q %+v", code, out, *got)
+	}
+	if (*got)[0].TerminalID != "owned-terminal" {
+		t.Fatal("lost terminal ownership")
 	}
 	code, out = runIn(`{"session_id":"native","hook_event_name":"Stop"}`, "codex-hook")
 	if code != 0 || strings.TrimSpace(out) != "{}" {

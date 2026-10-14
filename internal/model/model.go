@@ -5,6 +5,7 @@ import "encoding/json"
 
 // Envelope is what clients POST to /v1/events.
 type Envelope struct {
+	TerminalID string          `json:"terminal_id,omitempty"` // owned TRK terminal, forwarded by Codex hooks
 	Provider   string          `json:"provider,omitempty"`
 	TS         int64           `json:"ts,omitempty"`          // unix ms at the caller
 	Source     string          `json:"source"`                // cli|hook|statusline|api

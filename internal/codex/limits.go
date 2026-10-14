@@ -47,6 +47,11 @@ func ReadLimits(ctx context.Context) ([]LimitBucket, error) {
 }
 
 func codexExecutable() (string, error) {
+	return Executable()
+}
+
+// Executable resolves the native CLI without invoking an npm shell shim.
+func Executable() (string, error) {
 	if p := os.Getenv("TRK_CODEX_COMMAND"); p != "" {
 		if found, err := exec.LookPath(p); err == nil {
 			return found, nil
