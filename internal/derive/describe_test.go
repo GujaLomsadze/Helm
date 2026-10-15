@@ -48,7 +48,7 @@ func TestDescribe(t *testing.T) {
 func TestCategory(t *testing.T) {
 	for tool, want := range map[string]string{"Read": "read", "Grep": "read", "Glob": "read", "WebFetch": "read",
 		"Edit": "edit", "Write": "edit", "MultiEdit": "edit", "NotebookEdit": "edit", "Bash": "run", "Task": "run"} {
-		if got := Category(tool); got != want {
+		if got := Category(tool, ""); got != want {
 			t.Errorf("Category(%s) = %s, want %s", tool, got, want)
 		}
 	}
@@ -62,5 +62,24 @@ func TestPathsNormalizedToForwardSlashes(t *testing.T) {
 	got := Collisions([]FileTouch{{"a", `C:\proj\a.go`, 10, true}, {"b", "C:/proj/a.go", 10, true}}, 10)
 	if len(got) != 1 || got[0].Path != "C:/proj/a.go" {
 		t.Fatalf("collisions = %+v", got)
+	}
+}
+
+func TestCategoryKindWins(t *testing.T) {
+	if Category("apply_patch", "edit") != "edit" || Category("apply_patch", "") != "run" || Category("Read", "bogus") != "read" {
+		t.Fatal("kind")
+	}
+}
+
+func TestResolveFiles(t *testing.T) {
+	got := ResolveFiles([]string{"a.go", "/abs/b.go", `sub\c.go`, "a.go", "", "C:/w/d.go"}, "/repo")
+	want := []string{"/repo/a.go", "/abs/b.go", "/repo/sub/c.go", "C:/w/d.go"}
+	if len(got) != len(want) {
+		t.Fatal(got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatal(got)
+		}
 	}
 }

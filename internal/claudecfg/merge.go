@@ -5,15 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strings"
-
-	"github.com/GujaLomsadze/trk/internal/model"
 )
 
 var (
 	trkHookRe   = regexp.MustCompile(`(?:^|[\s/\\"'])trk(?:\.exe)?["']?\s+hook(?:\s|$)`)
 	trkStatusRe = regexp.MustCompile(`(?:^|[\s/\\"'])trk(?:\.exe)?["']?\s+statusline(?:\s|$)`)
 )
+
+// HookEvents are the Claude Code hook events trk init registers.
+var HookEvents = []string{
+	"SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+	"PostToolUseFailure", "PermissionRequest", "Notification", "Stop", "SubagentStop", "PreCompact",
+}
 
 func MergeHooks(root *Object, trkCmd string) (bool, error) {
 	var hooks *Object
@@ -30,7 +33,7 @@ func MergeHooks(root *Object, trkCmd string) (bool, error) {
 	}
 	want := trkCmd + " hook"
 	changed := false
-	for _, ev := range model.HookEvents {
+	for _, ev := range HookEvents {
 		var groups []any
 		if v, ok := hooks.Get(ev); ok && v != nil {
 			arr, isArr := v.([]any)
@@ -128,34 +131,3 @@ func MergeStatusLine(root *Object, trkCmd string, chain bool) (StatusAction, err
 	sl.Set("command", trkCmd+" statusline --then "+ShellQuote(cmd))
 	return StatusChained, nil
 }
-
-const (
-	BlockBegin = "<!-- trk:begin -->"
-	BlockEnd   = "<!-- trk:end -->"
-	Snippet    = BlockBegin + `
-## Progress reporting
-Report progress with the ` + "`trk`" + ` CLI. It never fails, prints nothing and always exits 0, so don't check its output.
-- At the start of a task: ` + "`trk start \"<task>\" --steps <N>`" + `
-- When moving to a new step: ` + "`trk step \"<what you're doing>\"`" + ` and ` + "`trk progress <i>/<N>`" + `
-- When you need a human decision: ` + "`trk blocked \"<question>\"`" + `
-- When finished: ` + "`trk done \"<one-line result>\"`" + `
-
-Attach ` + "`trk`" + ` to a shell command you were going to run anyway, so it adds no extra step:
-` + "`trk step \"Writing tests\"; go test ./...`" + `
-Put ` + "`trk`" + ` first and join with ` + "`;`" + ` (never pipe it), so the real command's output and exit code are unchanged.
-Run ` + "`trk`" + ` on its own only when there is no command to attach it to.
-` + BlockEnd + "\n"
-)
-
-func ApplyBlock(existing string) string {
-	b, e := strings.Index(existing, BlockBegin), strings.Index(existing, BlockEnd)
-	if b >= 0 && e > b {
-		return existing[:b] + strings.TrimSuffix(Snippet, "\n") + existing[e+len(BlockEnd):]
-	}
-	if strings.TrimSpace(existing) == "" {
-		return Snippet
-	}
-	return strings.TrimRight(existing, "\n") + "\n\n" + Snippet
-}
-
-func ShellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

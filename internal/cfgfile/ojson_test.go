@@ -1,4 +1,4 @@
-package claudecfg
+package cfgfile
 
 import "testing"
 

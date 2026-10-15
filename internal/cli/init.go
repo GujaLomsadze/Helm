@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/claudecfg"
+	"github.com/GujaLomsadze/trk/internal/agent"
+	_ "github.com/GujaLomsadze/trk/internal/agent/all"
+	"github.com/GujaLomsadze/trk/internal/cfgfile"
 	"github.com/GujaLomsadze/trk/internal/client"
 	"github.com/GujaLomsadze/trk/internal/config"
 	"golang.org/x/term"
@@ -20,24 +22,24 @@ import (
 func initCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	name := fs.String("agent", agent.Default, "agent to connect: "+agentNames())
 	yes := fs.Bool("yes", false, "accept defaults without prompting (chains an existing status line)")
-	noStatus := fs.Bool("no-statusline", false, "leave the status line alone")
-	noMD := fs.Bool("no-claude-md", false, "don't add the CLAUDE.md block")
-	mdPath := fs.String("claude-md", "", "CLAUDE.md to edit (default: <claude config dir>/CLAUDE.md)")
+	noStatus := fs.Bool("no-statusline", false, "leave the status line alone (Claude Code)")
+	noMD := fs.Bool("no-instructions", false, "don't add the progress block to the agent's instruction file")
+	mdPath := fs.String("instructions", "", "instruction file to edit (default: the agent's own, e.g. ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md)")
+	fs.BoolVar(noMD, "no-claude-md", false, "same as --no-instructions")
+	fs.StringVar(mdPath, "claude-md", "", "same as --instructions")
 	dry := fs.Bool("dry-run", false, "show what would change, write nothing")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	paths, err := claudecfg.DefaultPaths()
-	if err != nil {
-		fmt.Fprintf(stderr, "trk init: %v\n", err)
-		return 1
-	}
-	if *mdPath != "" {
-		paths.ClaudeMD = *mdPath
+	a, ok := agent.Get(*name)
+	if !ok {
+		fmt.Fprintf(stderr, "trk init: unknown agent %q (one of: %s)\n", *name, agentNames())
+		return 2
 	}
 	in := bufio.NewReader(stdin)
-	chain := func(existing string) bool {
+	confirm := func(question string) bool {
 		if *yes {
 			return true
 		}
@@ -45,15 +47,13 @@ func initCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return false
 		}
 		u := newUI(stdout)
-		fmt.Fprintf(stdout, "\n  %s You already have a status line: %s\n    Chain it through trk? It keeps showing exactly as before. %s ", u.warn("?"), u.bold(existing), u.dim("[Y/n]"))
+		fmt.Fprintf(stdout, "\n  %s %s %s ", u.warn("?"), question, u.dim("[Y/n]"))
 		line, _ := in.ReadString('\n')
-		a := strings.ToLower(strings.TrimSpace(line))
-		return a == "" || a == "y" || a == "yes"
+		ans := strings.ToLower(strings.TrimSpace(line))
+		return ans == "" || ans == "y" || ans == "yes"
 	}
-	res, err := claudecfg.Init(claudecfg.InitOptions{
-		Paths: paths, TrkCmd: trkCommand(), ChainStatus: chain,
-		SkipStatusLine: *noStatus, SkipClaudeMD: *noMD, DryRun: *dry, Now: time.Now(),
-	})
+	res, err := a.Install(agent.InstallOptions{TrkCmd: trkCommand(), DryRun: *dry, Instructions: *mdPath,
+		SkipInstructions: *noMD, SkipStatusLine: *noStatus, Confirm: confirm, Now: time.Now()})
 	if err != nil {
 		fmt.Fprintf(stderr, "trk init: %v\n", err)
 		return 1
@@ -63,8 +63,31 @@ func initCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		resume()
 		daemonUp = client.Default().EnsureDaemon(3 * time.Second)
 	}
-	renderInit(stdout, newUI(stdout), res, paths, *dry, daemonUp, config.Port())
+	renderInit(stdout, newUI(stdout), a.Label(), res, *dry, daemonUp, config.Port())
+	renderOthers(stdout, newUI(stdout), a.Name())
 	return 0
+}
+
+func agentNames() string {
+	var n []string
+	for _, a := range agent.All() {
+		n = append(n, a.Name())
+	}
+	return strings.Join(n, ", ")
+}
+
+// renderOthers mentions other agents installed on this machine, so connecting them is one command.
+func renderOthers(w io.Writer, u ui, done string) {
+	for _, a := range agent.All() {
+		if a.Name() == done {
+			continue
+		}
+		if l, err := a.Launch(agent.LaunchSpec{}); err == nil {
+			if _, err := exec.LookPath(l.Exe); err == nil {
+				fmt.Fprintf(w, "  %s %s is installed too: %s\n\n", u.dim("·"), a.Label(), u.accent("trk init --agent "+a.Name()))
+			}
+		}
+	}
 }
 
 func isTTY(r io.Reader) bool {
@@ -89,7 +112,7 @@ func trkCommand() string {
 	}
 	exe = filepath.ToSlash(exe)
 	if strings.ContainsAny(exe, " '\"") {
-		return claudecfg.ShellQuote(exe)
+		return cfgfile.ShellQuote(exe)
 	}
 	return exe
 }

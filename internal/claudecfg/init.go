@@ -101,39 +101,3 @@ func Init(o InitOptions) (InitResult, error) {
 	}
 	return res, nil
 }
-
-func backup(path string, data []byte, now time.Time) (string, error) {
-	dst := path + ".trk-backup-" + now.Format("20060102-150405")
-	return dst, os.WriteFile(dst, data, 0o600)
-}
-
-// writeAtomic writes via temp file + rename, following symlinks (dotfile setups) and keeping the mode.
-func writeAtomic(path string, data []byte) error {
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		path = real
-	}
-	mode := fs.FileMode(0o644)
-	if st, err := os.Stat(path); err == nil {
-		mode = st.Mode().Perm()
-	}
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".trk-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmp.Name(), mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
-}

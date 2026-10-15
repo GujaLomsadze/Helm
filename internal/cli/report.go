@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/GujaLomsadze/trk/internal/agent"
 	"io"
 	"os"
 	"strconv"
@@ -33,6 +34,14 @@ func envelope(source, kind string, payload json.RawMessage) model.Envelope {
 	env := model.Envelope{TS: nowMS(), Source: source, Kind: kind, ClaudePID: findClaude(), Payload: payload}
 	if s := os.Getenv("TRK_SESSION"); s != "" {
 		env.SessionID, env.SessionVia = s, model.AttrEnv
+	} else if env.ClaudePID == 0 {
+		// Not under an agent TRK finds by process: ask each agent's environment.
+		for _, a := range agent.All() {
+			if native := a.SessionFromEnv(os.Getenv); native != "" {
+				env.SessionID = agent.SessionKey(a.Name(), native)
+				break
+			}
+		}
 	}
 	return env
 }

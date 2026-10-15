@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GujaLomsadze/trk/internal/agent"
 	"github.com/GujaLomsadze/trk/internal/derive"
 	"github.com/GujaLomsadze/trk/internal/model"
 )
@@ -19,7 +20,7 @@ const (
 type CallView struct {
 	Tool    string `json:"tool"`
 	Summary string `json:"summary"`
-	State   string `json:"state"` // ok|fail|run
+	State   string `json:"state"` // ok|fail|run|unknown
 }
 
 type Block struct {
@@ -85,10 +86,10 @@ func (f *Fleet) View(now int64) View {
 			continue
 		}
 		v.Sessions = append(v.Sessions, sv)
-		if sv.Status != derive.StatusDone {
+		if sv.Status != derive.StatusDone && sv.Status != derive.StatusInterrupted {
 			for _, c := range e.T.Calls {
-				if c.File != "" {
-					touches = append(touches, derive.FileTouch{Session: sv.SessionID, Path: c.File, TS: c.Start, Edit: c.Edit})
+				for _, file := range c.Paths() {
+					touches = append(touches, derive.FileTouch{Session: sv.SessionID, Path: file, TS: c.Start, Edit: c.Edit})
 				}
 			}
 		}
@@ -134,6 +135,9 @@ func (f *Fleet) View(now int64) View {
 // hidden: dismissed with no activity since, or idle/done longer than the auto-hide setting.
 // Activity (not LastEventAt) is the clock: status-line refreshes keep arriving for idle sessions.
 func (f *Fleet) hidden(e *entry, status string, now int64) bool {
+	if e.S.Background || e.deferred {
+		return true
+	}
 	last := e.T.LastActivity
 	if last == 0 {
 		last = e.S.StartedAt
@@ -141,7 +145,7 @@ func (f *Fleet) hidden(e *entry, status string, now int64) bool {
 	if e.S.DismissedAt > 0 && e.S.DismissedAt >= last {
 		return true
 	}
-	quiet := status == derive.StatusDone || status == derive.StatusIdle
+	quiet := derive.Quiet(status)
 	return quiet && f.hideAfter > 0 && now-last > f.hideAfter
 }
 
@@ -192,13 +196,12 @@ func buildView(e *entry, now int64) SessionView {
 	}
 	edited, read := map[string]bool{}, map[string]bool{}
 	for _, c := range t.Calls {
-		if c.File == "" {
-			continue
-		}
-		if c.Edit {
-			edited[c.File] = true
-		} else {
-			read[c.File] = true
+		for _, f := range c.Paths() {
+			if c.Edit {
+				edited[f] = true
+			} else {
+				read[f] = true
+			}
 		}
 	}
 	for f := range read {
@@ -212,6 +215,8 @@ func buildView(e *entry, now int64) SessionView {
 		state := "run"
 		if c.Failed {
 			state = "fail"
+		} else if c.Unknown {
+			state = "unknown"
 		} else if c.End > 0 {
 			state = "ok"
 		}
@@ -221,7 +226,7 @@ func buildView(e *entry, now int64) SessionView {
 	for _, c := range t.Calls {
 		end := c.End
 		if (end == 0 && c.Start >= from) || end >= from {
-			sv.Timeline = append(sv.Timeline, Block{Start: c.Start, End: end, Cat: derive.Category(c.Tool)})
+			sv.Timeline = append(sv.Timeline, Block{Start: c.Start, End: end, Cat: derive.Category(c.Tool, c.Kind)})
 		}
 	}
 	for _, w := range t.Waits {
@@ -240,7 +245,7 @@ func disambiguate(ss []SessionView) {
 	}
 	for i := range ss {
 		if count[ss[i].Name] > 1 && ss[i].Title == "" {
-			id := ss[i].SessionID
+			_, id := agent.Split(ss[i].SessionID)
 			if len(id) > 4 {
 				id = id[:4]
 			}

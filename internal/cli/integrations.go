@@ -1,9 +1,13 @@
 package cli
 
 import (
+	"os"
+	"strings"
+
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/GujaLomsadze/trk/internal/agent"
 	"io"
 	"os/exec"
 	"runtime"
@@ -22,12 +26,35 @@ func readStdin(r io.Reader) []byte {
 	return b
 }
 
-func hook(stdin io.Reader) int {
+// hook forwards one hook payload: `trk hook` (Claude Code) or `trk hook --agent codex`.
+func hook(args []string, stdin io.Reader, stdout io.Writer) int {
+	name := agent.Default
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--agent" && i+1 < len(args):
+			name = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--agent="):
+			name = strings.TrimPrefix(a, "--agent=")
+		}
+	}
+	ad, ok := agent.Get(name)
 	b := readStdin(stdin)
-	if len(b) == 0 || !json.Valid(b) {
+	if !ok || len(b) == 0 || !json.Valid(b) {
 		return 0
 	}
-	send(envelope(model.SourceHook, "", b))
+	if reply := ad.HookReply(b); reply != "" {
+		fmt.Fprintln(stdout, reply) // before the send: the agent may be waiting on it
+	}
+	e := envelope(model.SourceHook, "", b)
+	e.TerminalID = os.Getenv("TRK_TERMINAL_ID")
+	if name != agent.Default {
+		e.Agent = name
+	}
+	if !ad.Caps().PIDAttribution {
+		e.ClaudePID = 0 // its process says nothing about which session this is
+	}
+	send(e)
 	return 0
 }
 

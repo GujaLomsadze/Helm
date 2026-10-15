@@ -25,6 +25,8 @@ const (
 // Meta describes a session for display and filtering.
 type Meta struct {
 	Name, Repo, Model, Cwd string
+	Agent                  string
+	Background             bool // the agent's internal work: never counted
 }
 
 // Input is everything Compute needs. Rows cover [PrevSince, Until): the extra period before
@@ -39,6 +41,7 @@ type Input struct {
 	Days             int
 	TZOffsetMin      int             // browser's getTimezoneOffset(): UTC minus local, minutes
 	Repos            map[string]bool // only these repos; nil = all
+	Agent            string          // only this agent's sessions; "" = all
 }
 
 type Result struct {
@@ -140,7 +143,13 @@ func Compute(in Input) Result {
 		}
 		return "other"
 	}
-	keep := func(sid string) bool { return in.Repos == nil || in.Repos[repoOf(sid)] }
+	// inScope: the agent filter (and never an agent's internal work). keep adds the repo filter;
+	// the repo list itself is everything in scope, so its chips don't vanish when one is picked.
+	inScope := func(sid string) bool {
+		m := in.Meta[sid]
+		return !m.Background && (in.Agent == "" || m.Agent == in.Agent)
+	}
+	keep := func(sid string) bool { return inScope(sid) && (in.Repos == nil || in.Repos[repoOf(sid)]) }
 
 	type acc struct {
 		Session
@@ -170,7 +179,7 @@ func Compute(in Input) Result {
 		ts        int64
 		tool, cmd string
 	}
-	open := map[string]pending{} // tool_use_id → its PreToolUse
+	open := map[string]pending{} // session + tool_use_id → its PreToolUse (ids are only unique per session)
 	waitFrom := map[string]int64{}
 	cmdRuns := map[string][]int64{}
 	cmdFails := map[string]int{}
@@ -195,7 +204,9 @@ func Compute(in Input) Result {
 				}
 				continue
 			}
-			repoSpend[repoOf(sid)] += dCost
+			if inScope(sid) {
+				repoSpend[repoOf(sid)] += dCost
+			}
 			if !keep(sid) {
 				continue
 			}
@@ -264,16 +275,21 @@ func Compute(in Input) Result {
 				cmd = CommandKey(r.Command)
 			}
 			if r.ToolUseID != "" {
-				open[r.ToolUseID] = pending{ts: r.TS, tool: r.Tool, cmd: cmd}
+				open[sid+"\x00"+r.ToolUseID] = pending{ts: r.TS, tool: r.Tool, cmd: cmd}
 			}
-			if r.File != "" {
-				f := relPath(r.File, in.Meta[sid].Cwd)
+			paths := derive.ResolveFiles(r.Files, in.Meta[sid].Cwd)
+			if len(paths) == 0 && r.File != "" {
+				paths = []string{r.File}
+			}
+			edit := r.ToolKind == "edit" || (r.ToolKind == "" && editTools[r.Tool])
+			for _, file := range paths {
+				f := relPath(file, in.Meta[sid].Cwd)
 				fa := files[f]
 				if fa == nil {
 					fa = &fileAcc{agents: map[string]bool{}}
 					files[f] = fa
 				}
-				if editTools[r.Tool] {
+				if edit {
 					fa.edits++
 				} else {
 					fa.reads++
@@ -281,7 +297,7 @@ func Compute(in Input) Result {
 				fa.agents[sid] = true
 			}
 		case "tool_post", "tool_fail":
-			p, ok := open[r.ToolUseID]
+			p, ok := open[sid+"\x00"+r.ToolUseID]
 			if !ok {
 				if r.Kind == "tool_fail" && tools[r.Tool] != nil {
 					tools[r.Tool].Fails++
@@ -289,7 +305,7 @@ func Compute(in Input) Result {
 				}
 				continue
 			}
-			delete(open, r.ToolUseID)
+			delete(open, sid+"\x00"+r.ToolUseID)
 			d := r.TS - p.ts
 			a.ToolMs += min(d, maxSpanMs)
 			if p.cmd != "" {

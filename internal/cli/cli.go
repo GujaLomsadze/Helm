@@ -13,7 +13,8 @@ const usageText = `trk — live tracker for coding agents
   trk serve                      run daemon + dashboard (auto-spawned when needed)
   trk open                       open the dashboard (resumes TRK if stopped)
   trk stop                       stop TRK; hooks pause until trk open
-  trk init                       wire up Claude Code hooks, status line, CLAUDE.md
+  trk init                       connect Claude Code: hooks, status line, CLAUDE.md
+  trk init --agent codex         connect Codex: hooks, AGENTS.md
   trk update [--check]           install the latest release (restarts the daemon)
 
   trk start "<task>" --steps N   declare a task
@@ -22,7 +23,7 @@ const usageText = `trk — live tracker for coding agents
   trk blocked "<question>"       ask the human for a decision
   trk done "<result>"            declare completion
 
-  trk hook                       (Claude Code) forward hook JSON from stdin
+  trk hook [--agent codex]       (agents) forward hook JSON from stdin
   trk statusline [--then CMD]    (Claude Code) forward status JSON, print a line
   trk version
 `
@@ -41,7 +42,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return safe(func() int {
 			switch cmd {
 			case "hook":
-				return hook(stdin)
+				return hook(rest, stdin, stdout)
 			case "statusline":
 				return statusline(rest, stdin, stdout)
 			}

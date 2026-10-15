@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/trk/internal/derive"
 	"github.com/GujaLomsadze/trk/internal/fleet"
 	"github.com/GujaLomsadze/trk/internal/ptree"
 	"github.com/GujaLomsadze/trk/internal/term"
@@ -25,8 +27,9 @@ type dashView struct {
 	TerminalsEnabled   bool        `json:"terminals_enabled"`
 	TerminalsSupported bool        `json:"terminals_supported"`
 	Terminals          []term.Info `json:"terminals"`
-	// Running holds every session whose claude process is alive, mapped to the TRK
-	// terminal it runs in, or "" when it runs somewhere else (a terminal tab, an IDE).
+	// Running holds every session known to be alive, mapped to the TRK terminal it runs
+	// in, or "" when it runs somewhere else (a terminal tab, an IDE). Sessions in live TRK
+	// terminals always count; elsewhere only agents with PID attribution can be checked.
 	Running map[string]string `json:"running"`
 }
 
@@ -41,28 +44,32 @@ func (s *Server) dash() dashView {
 		TerminalsSupported: term.Supported, Terminals: s.terms.List(), Running: running}
 }
 
-// linkSessions finds the sessions whose claude is still running and links each TRK
-// terminal to the session inside it (a claude process at or below the terminal's pid).
+// linkSessions finds the sessions still running and links each TRK terminal to the
+// session inside it: by TRK_TERMINAL_ID (postEvent) or, for agents with PID attribution,
+// by an agent process at or below the terminal's pid.
 // only, when not nil, limits the check to those sessions: the pid map keeps every
 // session ever seen, and the snapshot is rebuilt several times a second.
 func (s *Server) linkSessions(only map[string]bool) map[string]string {
 	out := map[string]string{}
-	pids := s.fl.ClaudePIDs()
-	if len(pids) == 0 {
-		return out
-	}
 	var live []term.Info
 	for _, t := range s.terms.List() {
 		if !t.Exited {
 			live = append(live, t)
+			if t.SessionID != "" && (only == nil || only[t.SessionID]) {
+				out[t.SessionID] = t.ID
+			}
 		}
+	}
+	pids := s.fl.ClaudePIDs()
+	if len(pids) == 0 {
+		return out
 	}
 	tb := ptree.Snapshot()
 	for pid, sid := range pids {
 		if only != nil && !only[sid] {
 			continue
 		}
-		if !tb.IsClaude(pid) {
+		if !tb.IsClaude(pid) { // ptree knows Claude Code's process; PID attribution is Claude's today
 			continue // exited, or the pid now belongs to something else
 		}
 		owner := ""
@@ -80,6 +87,17 @@ func (s *Server) linkSessions(only map[string]bool) map[string]string {
 		}
 	}
 	return out
+}
+
+// linkTerminal ties a terminal to the first session that reports from it.
+func (s *Server) linkTerminal(termID, sid string) {
+	if !s.terms.LinkFirst(termID, sid) {
+		return
+	}
+	if t, ok := s.terms.Get(termID); ok && t.Info().Title != "" {
+		s.titleOnce(sid, t.Info().Title) // the name typed in "+ New agent"
+	}
+	s.dirty.Store(true)
 }
 
 // titleOnce names a newly linked session unless it already has a title.
@@ -127,15 +145,30 @@ func (s *Server) startTerm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sp.Title = title
-	// Two claudes on one conversation would both append to its transcript.
+	if sp.Agent == "" {
+		sp.Agent = agent.Default
+	}
+	if _, ok := agent.Get(sp.Agent); !ok {
+		http.Error(w, "unknown agent", http.StatusBadRequest)
+		return
+	}
+	sid := agent.SessionKey(sp.Agent, sp.Resume)
+	// Two agents on one conversation would both write to it.
 	if sp.Resume != "" && !sp.Fork {
-		if where, ok := s.linkSessions(map[string]bool{sp.Resume: true})[sp.Resume]; ok {
-			msg := "that session is still running in another terminal: stop claude there first, or fork it"
+		if where, ok := s.linkSessions(map[string]bool{sid: true})[sid]; ok {
+			msg := "that session is still running in another terminal: stop the agent there first, or fork it"
 			if where != "" {
 				msg = "that session is already running in a TRK terminal"
 			}
 			http.Error(w, msg, http.StatusConflict)
 			return
+		}
+		// Without PID attribution TRK can't see a process; a busy card is the best evidence.
+		if !agent.CapsOf(sp.Agent).PIDAttribution {
+			if sv, ok := s.fl.SessionView(sid, s.now()); ok && !derive.Quiet(sv.Status) {
+				http.Error(w, "that session looks active: stop it where it runs first, or fork it", http.StatusConflict)
+				return
+			}
 		}
 	}
 	t, err := s.terms.Start(sp)
@@ -147,11 +180,11 @@ func (s *Server) startTerm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	s.log.Printf("terminal %s: %s %v in %s (pid %d)", t.Info().ID, s.terms.Command, sp.Resume, t.Info().Dir, t.Info().PID)
+	s.log.Printf("terminal %s: %s %v in %s (pid %d)", t.Info().ID, sp.Agent, sp.Resume, t.Info().Dir, t.Info().PID)
 	if sp.Resume != "" && !sp.Fork {
-		s.terms.DropExited(sp.Resume, t.Info().ID) // the resumed terminal replaces the one that ended
+		s.terms.DropExited(sid, t.Info().ID) // the resumed terminal replaces the one that ended
 		if sp.Title != "" {
-			s.applyTitle(sp.Resume, sp.Title) // a resume names a session we already know
+			s.applyTitle(sid, sp.Title) // a resume names a session we already know
 		}
 	}
 	w.WriteHeader(http.StatusCreated)

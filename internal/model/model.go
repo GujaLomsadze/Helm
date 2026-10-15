@@ -1,20 +1,41 @@
 // Package model defines the wire envelope, stored events and materialized state.
+//
+// Canonical payload: every adapter turns its agent's hook JSON into these fields (the
+// names follow Claude Code's hooks, where TRK started). The core reads nothing else.
+//
+//	session_id, cwd, model             the session, its folder, its model (string or {display_name,id})
+//	prompt                             user prompt (prompt kind)
+//	tool_name, tool_input, tool_use_id one tool call; tool_input.command / .file_path are read when present
+//	tool_files   []string              files a call touched, when the tool names more than one (patches)
+//	tool_kind    "read"|"edit"|"run"   what a call does, when tool_name alone doesn't say
+//	tool_outcome "ok"|"failed"|"unknown" how a call ended, when the agent reports it
+//	message, notification_type         notifications (permission_prompt, elicitation_dialog)
+//	last_assistant_message             the agent's last reply (stop kind)
+//	agent_id, agent_type               subagents
+//	background_tasks [{status}]        tasks still running when a turn ends
+//	cost, context_window, rate_limits  status-line counters (agents with Caps.Counters)
+//	trk_background, trk_defer          set by TRK from the adapter (see agent.Normalized)
 package model
 
 import "encoding/json"
 
 // Envelope is what clients POST to /v1/events.
 type Envelope struct {
+	Agent      string          `json:"agent,omitempty"`       // adapter that sent a hook ("" = claude, from older installs)
+	TerminalID string          `json:"terminal_id,omitempty"` // TRK terminal the agent runs in (TRK_TERMINAL_ID)
 	TS         int64           `json:"ts,omitempty"`          // unix ms at the caller
 	Source     string          `json:"source"`                // cli|hook|statusline|api
 	Kind       string          `json:"kind,omitempty"`        // empty for hook/statusline: derived by the daemon
 	SessionID  string          `json:"session_id,omitempty"`  // explicit session (TRK_SESSION or third-party)
 	SessionVia string          `json:"session_via,omitempty"` // "env" when SessionID came from TRK_SESSION
-	ClaudePID  int             `json:"claude_pid,omitempty"`  // nearest ancestor claude process, 0 if none
+	ClaudePID  int             `json:"claude_pid,omitempty"`  // nearest ancestor agent process with PID attribution (claude), 0 if none
 	Payload    json.RawMessage `json:"payload,omitempty"`
 }
 
 type Event struct {
+	Agent       string          `json:"agent,omitempty"`     // set by native hook/status events only
+	NativeID    string          `json:"native_id,omitempty"` // the agent's own session id
+	Key         string          `json:"-"`                   // adapter dedupe key; "" = none
 	ID          int64           `json:"id"`
 	TS          int64           `json:"ts"`
 	SessionID   string          `json:"session_id"`
@@ -26,6 +47,9 @@ type Event struct {
 
 type Session struct {
 	SessionID   string   `json:"session_id"`
+	Agent       string   `json:"agent"`               // learned from native events; "" = never seen one
+	NativeID    string   `json:"native_id,omitempty"` // the agent's own id (for resume commands)
+	Background  bool     `json:"-"`                   // the agent's internal work: never shown or counted
 	Name        string   `json:"name"`
 	Title       string   `json:"title,omitempty"` // chosen in the dashboard; shown instead of Name
 	Cwd         string   `json:"cwd"`
@@ -82,53 +106,29 @@ const (
 )
 
 const (
-	KindStart        = "start"
-	KindStep         = "step"
-	KindProgress     = "progress"
-	KindBlocked      = "blocked"
-	KindDone         = "done"
-	KindSessionStart = "session_start"
-	KindSessionEnd   = "session_end"
-	KindPrompt       = "prompt"
-	KindToolPre      = "tool_pre"
-	KindToolPost     = "tool_post"
-	KindToolFail     = "tool_fail"
-	KindPermission   = "permission"
-	KindNotification = "notification"
-	KindStop         = "stop"
-	KindSubagentStop = "subagent_stop"
-	KindCompact      = "compact"
-	KindStatus       = "status"
-	KindHookOther    = "hook"
-	KindOther        = "event"
+	KindStart         = "start"
+	KindStep          = "step"
+	KindProgress      = "progress"
+	KindBlocked       = "blocked"
+	KindDone          = "done"
+	KindSessionStart  = "session_start"
+	KindSessionEnd    = "session_end"
+	KindPrompt        = "prompt"
+	KindToolPre       = "tool_pre"
+	KindToolPost      = "tool_post"
+	KindToolFail      = "tool_fail"
+	KindPermission    = "permission"
+	KindNotification  = "notification"
+	KindStop          = "stop"
+	KindSubagentStop  = "subagent_stop"
+	KindCompact       = "compact"
+	KindCompacted     = "compacted" // compaction finished
+	KindInterrupt     = "interrupt" // the user stopped the turn
+	KindSubagentStart = "subagent_start"
+	KindStatus        = "status"
+	KindHookOther     = "hook"
+	KindOther         = "event"
 )
-
-// HookEvents are the Claude Code hook events trk init registers.
-var HookEvents = []string{
-	"SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
-	"PostToolUseFailure", "PermissionRequest", "Notification", "Stop", "SubagentStop", "PreCompact",
-}
-
-var hookKinds = map[string]string{
-	"SessionStart":       KindSessionStart,
-	"SessionEnd":         KindSessionEnd,
-	"UserPromptSubmit":   KindPrompt,
-	"PreToolUse":         KindToolPre,
-	"PostToolUse":        KindToolPost,
-	"PostToolUseFailure": KindToolFail,
-	"PermissionRequest":  KindPermission,
-	"Notification":       KindNotification,
-	"Stop":               KindStop,
-	"SubagentStop":       KindSubagentStop,
-	"PreCompact":         KindCompact,
-}
-
-func KindForHook(event string) string {
-	if k, ok := hookKinds[event]; ok {
-		return k
-	}
-	return KindHookOther
-}
 
 // IsActivity reports whether an event kind means the agent is doing something
 // (as opposed to bookkeeping: status updates, notifications, turn ends).

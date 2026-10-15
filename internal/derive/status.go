@@ -13,7 +13,14 @@ const (
 	StatusIdle    = "idle"
 	StatusLooping = "looping"
 	StatusDone    = "done"
+	// StatusInterrupted: the user stopped the turn; it waits for the next prompt.
+	StatusInterrupted = "interrupted"
 )
+
+// Quiet reports whether a status means nothing is happening right now.
+func Quiet(status string) bool {
+	return status == StatusDone || status == StatusIdle || status == StatusInterrupted
+}
 
 type Loop struct {
 	Kind    string `json:"kind"` // fail|churn
@@ -25,7 +32,7 @@ type Loop struct {
 	LastTS  int64  `json:"last_ts"`
 }
 
-// Status applies spec §6.3. Precedence: waiting > blocked > done > idle > looping > working.
+// Status applies spec §6.3. Precedence: waiting > blocked > interrupted > done > idle > looping > working.
 // The loop is returned even when another status wins, so the UI can still show the reality box.
 func Status(t *Tracker, now int64) (string, *Loop) {
 	loop := DetectLoop(t.Calls, t.ProgressAt, now)
@@ -34,6 +41,8 @@ func Status(t *Tracker, now int64) (string, *Loop) {
 		return StatusWaiting, loop
 	case t.Blocked != nil:
 		return StatusBlocked, loop
+	case t.Interrupted > 0 && t.LastActivity <= t.Interrupted && t.DoneAt <= t.Interrupted:
+		return StatusInterrupted, loop
 	case t.DoneAt > 0 && t.LastActivity <= t.DoneAt:
 		return StatusDone, loop
 	case now-t.LastActivity > IdleAfter:
@@ -73,8 +82,12 @@ func DetectLoop(calls []ToolCall, progressAt, now int64) *Loop {
 		if c.Failed && c.Key != "" {
 			bump(fails, c.Key, "fail", c)
 		}
-		if c.Edit && c.File != "" && c.Start > progressAt {
-			bump(churn, c.File, "churn", c)
+		if c.Edit && c.Start > progressAt {
+			for _, f := range c.Paths() {
+				cc := c
+				cc.Summary = f
+				bump(churn, f, "churn", cc)
+			}
 		}
 	}
 	if l := worst(fails, LoopFailures); l != nil {

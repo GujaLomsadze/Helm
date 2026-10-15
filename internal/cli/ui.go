@@ -5,9 +5,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
-	"github.com/GujaLomsadze/trk/internal/claudecfg"
+	"github.com/GujaLomsadze/trk/internal/agent"
 	"golang.org/x/term"
 )
 
@@ -50,64 +51,71 @@ func tilde(p string) string {
 	return p
 }
 
-func renderInit(w io.Writer, u ui, r claudecfg.InitResult, p claudecfg.Paths, dry, daemonUp bool, port int) {
-	done, same := u.ok("✓"), u.dim("·")
-	verb := func(did, would string) string {
-		if dry {
-			return would
-		}
-		return did
-	}
+func renderInit(w io.Writer, u ui, label string, r agent.InstallResult, dry, daemonUp bool, port int) {
 	if dry {
 		u.banner(w, "dry run — nothing will be written")
 	} else {
-		u.banner(w, "connected to Claude Code")
+		u.banner(w, "connected to "+label)
 	}
-
-	if r.HooksChanged {
-		u.row(w, done, "Hooks", verb("added to ", "would add to ")+tilde(p.Settings))
-	} else {
-		u.row(w, same, "Hooks", u.dim("already set up"))
-	}
-	switch r.Status {
-	case claudecfg.StatusAdded:
-		u.row(w, done, "Status line", verb("set to trk", "would set to trk"))
-	case claudecfg.StatusChained:
-		u.row(w, done, "Status line", verb("chained", "would chain")+u.dim(" — "+r.ExistingStatus+" still shows, unchanged"))
-	case claudecfg.StatusPresent:
-		u.row(w, same, "Status line", u.dim("already goes through trk"))
-	case claudecfg.StatusKept:
-		u.row(w, u.warn("!"), "Status line", "kept "+r.ExistingStatus+u.dim(" — re-run with --yes to chain it"))
-	}
-	if r.ClaudeMDChanged {
-		u.row(w, done, "CLAUDE.md", verb("progress block added", "would add progress block")+u.dim(" — "+tilde(p.ClaudeMD)))
-	} else if r.ClaudeMDBackup == "" {
-		u.row(w, same, "CLAUDE.md", u.dim("already set up"))
+	for _, s := range r.Steps {
+		detail := s.Detail
+		if filepath.IsAbs(detail) {
+			detail = tilde(detail)
+			if s.State == agent.StepAdded && dry {
+				detail = "would update " + detail
+			} else if s.State == agent.StepAdded {
+				detail = "updated " + detail
+			}
+		}
+		switch s.State {
+		case agent.StepAdded:
+			u.row(w, u.ok("✓"), s.Label, detail)
+		case agent.StepKept:
+			u.row(w, u.warn("!"), s.Label, detail)
+		default:
+			u.row(w, u.dim("·"), s.Label, u.dim(detail))
+		}
 	}
 	if dry {
-		if r.HooksChanged || r.ClaudeMDChanged || r.Status == claudecfg.StatusAdded || r.Status == claudecfg.StatusChained {
-			fmt.Fprintf(w, "\n  Run %s to apply.\n\n", u.accent("trk init"))
+		if r.Changed() {
+			fmt.Fprintf(w, "\n  Run %s to apply.\n\n", u.accent("trk init"+agentFlag(label)))
 		} else {
 			fmt.Fprintf(w, "\n  %s\n\n", u.dim("Nothing to change."))
 		}
 		return
 	}
 	if daemonUp {
-		u.row(w, done, "Daemon", "running")
+		u.row(w, u.ok("✓"), "Daemon", "running")
 	} else {
 		u.row(w, u.warn("!"), "Daemon", "not started yet"+u.dim(" — starts on first use"))
 	}
-
-	if r.SettingsBackup != "" || r.ClaudeMDBackup != "" {
-		fmt.Fprintf(w, "\n  %s\n", u.dim("Backups (restore these to undo)"))
-		for _, b := range []string{r.SettingsBackup, r.ClaudeMDBackup} {
-			if b != "" {
-				fmt.Fprintf(w, "    %s\n", u.dim(tilde(b)))
-			}
+	var backups []string
+	for _, s := range r.Steps {
+		if s.Backup != "" && !slices.Contains(backups, s.Backup) {
+			backups = append(backups, s.Backup)
 		}
 	}
-
+	if len(backups) > 0 {
+		fmt.Fprintf(w, "\n  %s\n", u.dim("Backups (restore these to undo)"))
+		for _, b := range backups {
+			fmt.Fprintf(w, "    %s\n", u.dim(tilde(b)))
+		}
+	}
 	fmt.Fprintf(w, "\n  %s\n", u.bold("Next"))
-	fmt.Fprintf(w, "    %s  Restart your Claude Code sessions %s\n", u.accent("1"), u.dim("(hooks load at session start)"))
-	fmt.Fprintf(w, "    %s  %s  %s\n\n", u.accent("2"), u.accent("trk open"), u.dim(fmt.Sprintf("→ http://localhost:%d", port)))
+	n := 1
+	for _, step := range r.Next {
+		fmt.Fprintf(w, "    %s  %s\n", u.accent(fmt.Sprint(n)), step)
+		n++
+	}
+	fmt.Fprintf(w, "    %s  %s  %s\n\n", u.accent(fmt.Sprint(n)), u.accent("trk open"), u.dim(fmt.Sprintf("→ http://localhost:%d", port)))
+}
+
+// agentFlag repeats --agent for a non-default agent in the "run this" hint.
+func agentFlag(label string) string {
+	for _, a := range agent.All() {
+		if a.Label() == label && a.Name() != agent.Default {
+			return " --agent " + a.Name()
+		}
+	}
+	return ""
 }

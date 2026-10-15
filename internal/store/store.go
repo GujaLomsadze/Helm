@@ -4,6 +4,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/GujaLomsadze/trk/internal/model"
@@ -47,7 +48,20 @@ ALTER TABLE sessions ADD COLUMN api_ms INTEGER;
 ALTER TABLE sessions ADD COLUMN wall_ms INTEGER;
 ALTER TABLE sessions ADD COLUMN subagents TEXT;
 ALTER TABLE sessions ADD COLUMN bg_running INTEGER;`, `
-ALTER TABLE sessions ADD COLUMN title TEXT;`}
+ALTER TABLE sessions ADD COLUMN title TEXT;`, `
+ALTER TABLE events ADD COLUMN agent TEXT NOT NULL DEFAULT '';
+ALTER TABLE events ADD COLUMN native_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE events ADD COLUMN event_key TEXT;
+CREATE UNIQUE INDEX events_key ON events(event_key) WHERE event_key IS NOT NULL;
+ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN native_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN background INTEGER NOT NULL DEFAULT 0;
+UPDATE events SET agent = 'claude' WHERE source IN ('hook','statusline');
+UPDATE sessions SET agent = 'claude', native_id = session_id
+  WHERE EXISTS (SELECT 1 FROM events e WHERE e.session_id = sessions.session_id AND e.agent = 'claude');`}
+
+// ErrDuplicate: an adapter delivered an event it had already delivered (same key).
+var ErrDuplicate = errors.New("event already stored")
 
 type Store struct{ db *sql.DB }
 
@@ -92,16 +106,24 @@ func migrate(db *sql.DB) error {
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) Append(e *model.Event) error {
-	res, err := s.db.Exec(`INSERT INTO events(ts, session_id, source, kind, payload, attribution) VALUES(?,?,?,?,?,?)`,
-		e.TS, e.SessionID, e.Source, e.Kind, string(e.Payload), e.Attribution)
+	var key any
+	if e.Key != "" {
+		key = e.Key
+	}
+	res, err := s.db.Exec(`INSERT INTO events(ts, session_id, source, kind, payload, attribution, agent, native_id, event_key) VALUES(?,?,?,?,?,?,?,?,?)
+ON CONFLICT(event_key) WHERE event_key IS NOT NULL DO NOTHING`,
+		e.TS, e.SessionID, e.Source, e.Kind, string(e.Payload), e.Attribution, e.Agent, e.NativeID, key)
 	if err != nil {
 		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return ErrDuplicate
 	}
 	e.ID, err = res.LastInsertId()
 	return err
 }
 
-const eventCols = `id, ts, session_id, source, kind, payload, attribution`
+const eventCols = `id, ts, session_id, source, kind, payload, attribution, agent, native_id, coalesce(event_key,'')`
 
 func scanEvents(rows *sql.Rows) ([]model.Event, error) {
 	defer rows.Close()
@@ -110,7 +132,7 @@ func scanEvents(rows *sql.Rows) ([]model.Event, error) {
 		var e model.Event
 		var sid, attr sql.NullString
 		var payload string
-		if err := rows.Scan(&e.ID, &e.TS, &sid, &e.Source, &e.Kind, &payload, &attr); err != nil {
+		if err := rows.Scan(&e.ID, &e.TS, &sid, &e.Source, &e.Kind, &payload, &attr, &e.Agent, &e.NativeID, &e.Key); err != nil {
 			return nil, err
 		}
 		e.SessionID, e.Attribution, e.Payload = sid.String, attr.String, json.RawMessage(payload)
@@ -140,8 +162,9 @@ func (s *Store) SessionEvents(id string, limit int) ([]model.Event, error) {
 func (s *Store) UpsertSession(x model.Session) error {
 	_, err := s.db.Exec(`INSERT INTO sessions(session_id, name, cwd, repo, branch, model, task, step_text, step_i, step_n, status,
   ctx_pct, ctx_size, cost_usd, tokens_in, tokens_out, started_at, last_event_at, dismissed_at,
-  last_prompt, last_prompt_at, last_reply, last_reply_at, lines_added, lines_removed, api_ms, wall_ms, subagents, bg_running, title)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  last_prompt, last_prompt_at, last_reply, last_reply_at, lines_added, lines_removed, api_ms, wall_ms, subagents, bg_running, title,
+  agent, native_id, background)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(session_id) DO UPDATE SET name=excluded.name, cwd=excluded.cwd, repo=excluded.repo, branch=excluded.branch,
   model=excluded.model, task=excluded.task, step_text=excluded.step_text, step_i=excluded.step_i, step_n=excluded.step_n,
   status=excluded.status, ctx_pct=excluded.ctx_pct, ctx_size=excluded.ctx_size, cost_usd=excluded.cost_usd,
@@ -149,11 +172,12 @@ ON CONFLICT(session_id) DO UPDATE SET name=excluded.name, cwd=excluded.cwd, repo
   dismissed_at=excluded.dismissed_at, last_prompt=excluded.last_prompt, last_prompt_at=excluded.last_prompt_at,
   last_reply=excluded.last_reply, last_reply_at=excluded.last_reply_at, lines_added=excluded.lines_added,
   lines_removed=excluded.lines_removed, api_ms=excluded.api_ms, wall_ms=excluded.wall_ms, subagents=excluded.subagents,
-  bg_running=excluded.bg_running, title=excluded.title`,
+  bg_running=excluded.bg_running, title=excluded.title, agent=excluded.agent, native_id=excluded.native_id,
+  background=excluded.background`,
 		x.SessionID, x.Name, x.Cwd, x.Repo, x.Branch, x.Model, x.Task, x.StepText, x.StepI, x.StepN, x.Status,
 		x.CtxPct, x.CtxSize, x.CostUSD, x.TokensIn, x.TokensOut, x.StartedAt, x.LastEventAt, x.DismissedAt,
 		x.LastPrompt, x.LastPromptAt, x.LastReply, x.LastReplyAt, x.LinesAdded, x.LinesRemoved, x.APIMs, x.WallMs,
-		subagentsJSON(x.Subagents), x.BgRunning, x.Title)
+		subagentsJSON(x.Subagents), x.BgRunning, x.Title, x.Agent, x.NativeID, x.Background)
 	return err
 }
 
@@ -172,7 +196,7 @@ func (s *Store) Sessions() ([]model.Session, error) {
   coalesce(started_at,0), coalesce(last_event_at,0), coalesce(dismissed_at,0),
   coalesce(last_prompt,''), coalesce(last_prompt_at,0), coalesce(last_reply,''), coalesce(last_reply_at,0),
   coalesce(lines_added,0), coalesce(lines_removed,0), coalesce(api_ms,0), coalesce(wall_ms,0), coalesce(subagents,''),
-  coalesce(bg_running,0), coalesce(title,'') FROM sessions`)
+  coalesce(bg_running,0), coalesce(title,''), agent, native_id, background FROM sessions`)
 	if err != nil {
 		return nil, err
 	}
@@ -185,13 +209,31 @@ func (s *Store) Sessions() ([]model.Session, error) {
 			&x.StepI, &x.StepN, &x.Status, &x.CtxPct, &x.CtxSize, &x.CostUSD, &x.TokensIn, &x.TokensOut,
 			&x.StartedAt, &x.LastEventAt, &x.DismissedAt,
 			&x.LastPrompt, &x.LastPromptAt, &x.LastReply, &x.LastReplyAt, &x.LinesAdded, &x.LinesRemoved, &x.APIMs, &x.WallMs,
-			&subs, &x.BgRunning, &x.Title); err != nil {
+			&subs, &x.BgRunning, &x.Title, &x.Agent, &x.NativeID, &x.Background); err != nil {
 			return nil, err
 		}
 		if subs != "" {
 			_ = json.Unmarshal([]byte(subs), &x.Subagents)
 		}
 		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// Agents lists the agents whose sessions had events since ms.
+func (s *Store) Agents(since int64) ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT agent FROM sessions WHERE agent != '' AND last_event_at >= ? ORDER BY agent`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
 	}
 	return out, rows.Err()
 }

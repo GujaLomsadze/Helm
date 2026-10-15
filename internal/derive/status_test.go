@@ -70,3 +70,31 @@ func TestDetectLoopPicksWorstAndDescribes(t *testing.T) {
 		t.Fatal("loop on empty")
 	}
 }
+
+func TestInterrupted(t *testing.T) {
+	tr := &Tracker{}
+	tr.Activity(100)
+	tr.ToolStart(ToolCall{ID: "a", Tool: "Bash", Start: 100})
+	tr.Interrupted = 150
+	tr.FinishCalls(150)
+	if st, _ := Status(tr, 200); st != StatusInterrupted || !Quiet(st) {
+		t.Fatal(st)
+	}
+	if c := tr.Calls[0]; c.End != 150 || !c.Unknown || c.Failed {
+		t.Fatalf("%+v", c)
+	}
+	tr.Activity(300) // a new prompt or tool call
+	if st, _ := Status(tr, 310); st != StatusWorking {
+		t.Fatal(st)
+	}
+}
+
+func TestChurnCountsEveryFileOfACall(t *testing.T) {
+	var calls []ToolCall
+	for i := int64(0); i < ChurnEdits; i++ {
+		calls = append(calls, ToolCall{Tool: "apply_patch", Edit: true, Files: []string{"/r/a.go", "/r/b.go"}, Start: 1000 + i})
+	}
+	if l := DetectLoop(calls, 0, 2000); l == nil || l.Kind != "churn" || l.Count != ChurnEdits {
+		t.Fatalf("%+v", l)
+	}
+}

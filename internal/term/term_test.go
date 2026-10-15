@@ -10,7 +10,17 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/GujaLomsadze/trk/internal/agent"
+	_ "github.com/GujaLomsadze/trk/internal/agent/all"
+	"github.com/GujaLomsadze/trk/internal/agent/claude"
 )
+
+// args is the argv the default agent's adapter builds for a spec.
+func args(sp Spec) []string {
+	l, _ := claude.Adapter{}.Launch(agent.LaunchSpec{Prompt: sp.Prompt, Resume: sp.Resume, Fork: sp.Fork})
+	return l.Args
+}
 
 func newTestManager(cmd string) *Manager {
 	m := NewManager()
@@ -172,9 +182,12 @@ func TestCleanEnvDropsParentClaudeSession(t *testing.T) {
 	t.Setenv("CLAUDECODE", "1")
 	t.Setenv("CLAUDE_PID", "42")
 	t.Setenv("TRK_KEEP_ME", "yes")
+	t.Setenv("CODEX_THREAD_ID", "thread")
+	t.Setenv("TRK_SESSION", "outer")
+	t.Setenv("TRK_TERMINAL_ID", "outer-term")
 	env := CleanEnv()
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "CLAUDE") {
+		if strings.HasPrefix(kv, "CLAUDE") || strings.HasPrefix(kv, "CODEX_THREAD") || strings.HasPrefix(kv, "TRK_SESSION") || strings.HasPrefix(kv, "TRK_TERMINAL") {
 			t.Errorf("leaked %s", kv)
 		}
 	}
@@ -190,5 +203,27 @@ func TestScrollbackIsCapped(t *testing.T) {
 	r.write([]byte("abc"))
 	if got := string(r.bytes()); got != "3456789abc" {
 		t.Fatalf("ring = %q", got)
+	}
+}
+
+func TestTerminalIDAndLinkFirst(t *testing.T) {
+	m := newTestManager("sh")
+	t.Cleanup(m.Close)
+	tm, err := m.Start(Spec{Dir: t.TempDir(), Agent: "codex", Prompt: "-c"}) // sh -- -c: harmless
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tm.Info().Agent != "codex" {
+		t.Fatal(tm.Info())
+	}
+	if !m.LinkFirst(tm.Info().ID, "codex:a") || m.LinkFirst(tm.Info().ID, "codex:b") || tm.Info().SessionID != "codex:a" {
+		t.Fatal("first session must stick")
+	}
+	if _, err := m.Start(Spec{Dir: t.TempDir(), Agent: "nope"}); err == nil {
+		t.Fatal("unknown agent accepted")
+	}
+	r, _ := m.Start(Spec{Dir: t.TempDir(), Agent: "codex", Resume: "abc"})
+	if r.Info().SessionID != "codex:abc" {
+		t.Fatal(r.Info())
 	}
 }

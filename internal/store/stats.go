@@ -1,6 +1,9 @@
 package store
 
-import "database/sql"
+import (
+	"database/sql"
+	"encoding/json"
+)
 
 // StatRow is one event cut down to the fields the Stats page reads. Status-line rows carry the
 // cumulative counters (cost, model time, tokens) and context use; tool rows carry the tool, its
@@ -13,11 +16,13 @@ type StatRow struct {
 	ToolUseID string
 	Command   string
 	File      string
-	Cost      float64 // cumulative for the claude process, USD
-	APIMs     float64 // cumulative model time, ms
-	Tokens    float64 // cumulative input + output tokens
-	Ctx       float64 // context used, %
-	HasStatus bool    // the status-line counters above are present
+	Files     []string // every file of a multi-file call (tool_files), else empty
+	ToolKind  string   // read|edit|run from the agent
+	Cost      float64  // cumulative for the claude process, USD
+	APIMs     float64  // cumulative model time, ms
+	Tokens    float64  // cumulative input + output tokens
+	Ctx       float64  // context used, %
+	HasStatus bool     // the status-line counters above are present
 	HasCtx    bool
 }
 
@@ -30,7 +35,8 @@ const statCols = `ts, coalesce(session_id,''), kind,
   coalesce(json_extract(payload,'$.tool_input.file_path'), json_extract(payload,'$.tool_input.notebook_path')),
   json_extract(payload,'$.cost.total_cost_usd'), json_extract(payload,'$.cost.total_api_duration_ms'),
   json_extract(payload,'$.context_window.total_input_tokens'), json_extract(payload,'$.context_window.total_output_tokens'),
-  json_extract(payload,'$.context_window.used_percentage')`
+  json_extract(payload,'$.context_window.used_percentage'),
+  json_extract(payload,'$.tool_files'), json_extract(payload,'$.tool_kind')`
 
 // StatRows returns the Stats page's events in [since, until), oldest first.
 func (s *Store) StatRows(since, until int64) ([]StatRow, error) {
@@ -66,12 +72,15 @@ type scanner interface{ Scan(...any) error }
 
 func scanStat(sc scanner) (StatRow, error) {
 	var r StatRow
-	var tool, id, cmd, file sql.NullString
+	var tool, id, cmd, file, files, kind sql.NullString
 	var cost, api, tin, tout, ctx sql.NullFloat64
-	if err := sc.Scan(&r.TS, &r.Session, &r.Kind, &tool, &id, &cmd, &file, &cost, &api, &tin, &tout, &ctx); err != nil {
+	if err := sc.Scan(&r.TS, &r.Session, &r.Kind, &tool, &id, &cmd, &file, &cost, &api, &tin, &tout, &ctx, &files, &kind); err != nil {
 		return r, err
 	}
-	r.Tool, r.ToolUseID, r.Command, r.File = tool.String, id.String, cmd.String, file.String
+	r.Tool, r.ToolUseID, r.Command, r.File, r.ToolKind = tool.String, id.String, cmd.String, file.String, kind.String
+	if files.Valid {
+		_ = json.Unmarshal([]byte(files.String), &r.Files)
+	}
 	if cost.Valid {
 		r.HasStatus = true
 		r.Cost, r.APIMs, r.Tokens = cost.Float64, api.Float64, tin.Float64+tout.Float64

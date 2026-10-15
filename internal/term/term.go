@@ -1,6 +1,6 @@
 // Package term runs agents in pseudo-terminals for the dashboard's agent drawer: each
-// terminal is a `claude` process on a pty whose output is kept in a capped scrollback
-// and fanned out to any number of attached viewers.
+// terminal is one agent process (its adapter builds the argv) on a pty whose output is
+// kept in a capped scrollback and fanned out to any number of attached viewers.
 package term
 
 import (
@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/GujaLomsadze/trk/internal/agent"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,7 +21,7 @@ import (
 
 const (
 	scrollbackMax = 256 << 10 // bytes replayed to a viewer that attaches late
-	MaxRunning    = 16        // live terminals at once; each one is a whole claude
+	MaxRunning    = 16        // live terminals at once; each one is a whole agent
 )
 
 // ErrUnsupported: this platform has no pty support (native Windows).
@@ -29,6 +30,7 @@ var ErrUnsupported = errors.New("terminals are not supported on this platform")
 // Spec says what to run. Resume continues an existing conversation by session id;
 // Fork (with Resume) continues a copy of it under a new id, leaving the original alone.
 type Spec struct {
+	Agent  string `json:"agent,omitempty"` // adapter name; "" = the default agent
 	Dir    string `json:"dir"`
 	Prompt string `json:"prompt"`
 	Resume string `json:"resume,omitempty"`
@@ -40,6 +42,7 @@ var sessionID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 
 // Info is what the dashboard lists.
 type Info struct {
+	Agent  string `json:"agent"`
 	ID     string `json:"id"`
 	Dir    string `json:"dir"`
 	Name   string `json:"name"`
@@ -47,8 +50,8 @@ type Info struct {
 	Resume string `json:"resume,omitempty"` // session id it was started to resume or fork
 	Fork   bool   `json:"fork,omitempty"`
 	Title  string `json:"title,omitempty"`
-	// SessionID is the Claude session running in it, once its hooks have reported one
-	// (the daemon links it by process id). Kept after the process exits.
+	// SessionID is the session running in it, once its hooks have reported one (the daemon
+	// links it by TRK_TERMINAL_ID or process id). Kept after the process exits.
 	SessionID string `json:"session_id,omitempty"`
 	Started   int64  `json:"started"` // unix ms
 	PID       int    `json:"pid"`
@@ -56,15 +59,22 @@ type Info struct {
 }
 
 type Manager struct {
-	Command  string // program to run; "claude" unless a test swaps it
+	Command  string // replaces every agent's program (tests, demos); "" = the adapter's
 	OnChange func() // called (without locks held) when a terminal starts, exits or is removed
 	mu       sync.Mutex
 	terms    map[string]*Term
 }
 
-func NewManager() *Manager { return &Manager{Command: "claude", terms: map[string]*Term{}} }
+func NewManager() *Manager { return &Manager{terms: map[string]*Term{}} }
 
 func (m *Manager) Start(sp Spec) (*Term, error) {
+	if sp.Agent == "" {
+		sp.Agent = agent.Default
+	}
+	ad, ok := agent.Get(sp.Agent)
+	if !ok {
+		return nil, errors.New("unknown agent")
+	}
 	dir := filepath.Clean(sp.Dir)
 	if sp.Dir == "" || !filepath.IsAbs(dir) {
 		return nil, errors.New("folder must be an absolute path")
@@ -81,23 +91,31 @@ func (m *Manager) Start(sp Spec) (*Term, error) {
 	if m.Running() >= MaxRunning {
 		return nil, fmt.Errorf("%d agents are already running in TRK; stop one first", MaxRunning)
 	}
-	cmd := exec.Command(m.Command, args(sp)...)
+	l, err := ad.Launch(agent.LaunchSpec{Prompt: sp.Prompt, Resume: sp.Resume, Fork: sp.Fork})
+	if m.Command != "" {
+		l.Exe, err = m.Command, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	id := newID()
+	cmd := exec.Command(l.Exe, l.Args...)
 	cmd.Dir = dir
-	cmd.Env = append(CleanEnv(), "TERM=xterm-256color", "COLORTERM=truecolor")
+	cmd.Env = append(CleanEnv(), "TERM=xterm-256color", "COLORTERM=truecolor", "TRK_TERMINAL_ID="+id)
 	f, err := startPty(cmd, 120, 32)
 	if errors.Is(err, exec.ErrNotFound) {
-		return nil, fmt.Errorf("%s is not on TRK's PATH; start TRK from a shell where `%s` works (trk stop, then trk open)", m.Command, m.Command)
+		return nil, fmt.Errorf("%s is not on TRK's PATH; start TRK from a shell where `%s` works (trk stop, then trk open)", l.Exe, l.Exe)
 	}
 	if err != nil {
 		return nil, err
 	}
 	t := &Term{
-		info: Info{ID: newID(), Dir: dir, Name: filepath.Base(dir), Prompt: strings.TrimSpace(sp.Prompt),
+		info: Info{Agent: sp.Agent, ID: id, Dir: dir, Name: filepath.Base(dir), Prompt: strings.TrimSpace(sp.Prompt),
 			Resume: sp.Resume, Fork: sp.Fork, Title: sp.Title, Started: time.Now().UnixMilli(), PID: cmd.Process.Pid},
 		cmd: cmd, f: f, subs: map[chan []byte]struct{}{}, ring: ring{max: scrollbackMax},
 	}
 	if sp.Resume != "" && !sp.Fork {
-		t.info.SessionID = sp.Resume // a fork gets its new id from its first hook event
+		t.info.SessionID = agent.SessionKey(sp.Agent, sp.Resume) // a fork gets its new id from its first hook event
 	}
 	m.mu.Lock()
 	m.terms[t.info.ID] = t
@@ -107,22 +125,23 @@ func (m *Manager) Start(sp Spec) (*Term, error) {
 	return t, nil
 }
 
-// args builds claude's argv (no shell involved); the first prompt is a single entry.
-func args(sp Spec) []string {
-	var a []string
-	if sp.Resume != "" {
-		a = append(a, "--resume", sp.Resume)
-		if sp.Fork {
-			a = append(a, "--fork-session")
-		}
+// LinkFirst records the first session a terminal reports (by TRK_TERMINAL_ID). Later
+// sessions from the same terminal (subagents, forks it spawns) don't replace it.
+func (m *Manager) LinkFirst(id, sessionID string) bool {
+	t, ok := m.Get(id)
+	if !ok || sessionID == "" {
+		return false
 	}
-	if p := strings.TrimSpace(sp.Prompt); p != "" {
-		a = append(a, p)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.info.Exited || t.info.SessionID != "" {
+		return false
 	}
-	return a
+	t.info.SessionID = sessionID
+	return true
 }
 
-// Link records which Claude session runs in terminal id. It reports whether that changed.
+// Link records which session runs in terminal id (process-tree linking). It reports whether that changed.
 func (m *Manager) Link(id, sessionID string) bool {
 	t, ok := m.Get(id)
 	if !ok || sessionID == "" {
@@ -298,20 +317,31 @@ func (t *Term) kill() {
 	_ = t.f.Close()
 }
 
-// CleanEnv is this process's environment minus the launching Claude session's own
-// variables. The daemon is spawned by Claude Code hooks, so it carries CLAUDECODE,
-// CLAUDE_CODE_CHILD_SESSION, the session id and its messaging socket/token; a child
-// claude that inherits them runs as that session's sub-agent and saves no transcript.
+// CleanEnv is this process's environment minus any agent session's own variables. The
+// daemon is spawned by agent hooks, so it inherits the launching session's identity; an
+// agent that inherits it joins that session instead of starting its own.
 func CleanEnv() []string {
 	out := []string{}
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
-		if k == "CLAUDECODE" || k == "CLAUDE_PID" || k == "CLAUDE_EFFORT" || strings.HasPrefix(k, "CLAUDE_CODE_") {
+		if private(k) {
 			continue
 		}
 		out = append(out, kv)
 	}
 	return out
+}
+
+func private(k string) bool {
+	if k == "TRK_SESSION" || k == "TRK_TERMINAL_ID" {
+		return true
+	}
+	for _, a := range agent.All() {
+		if a.PrivateEnv(k) {
+			return true
+		}
+	}
+	return false
 }
 
 // ring keeps the last max bytes written.

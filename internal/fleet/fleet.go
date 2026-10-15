@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/GujaLomsadze/trk/internal/agent"
 	"github.com/GujaLomsadze/trk/internal/derive"
 	"github.com/GujaLomsadze/trk/internal/gitinfo"
 	"github.com/GujaLomsadze/trk/internal/model"
@@ -31,6 +32,7 @@ type entry struct {
 	statusHash uint64
 	subSeen    map[string]bool // subagent ids already counted (SubagentStop can repeat)
 	restoredAt int64           // last event already folded into the restored session; replays up to it are not re-counted
+	deferred   bool            // adapter asked to keep the card hidden until the session does something
 }
 
 type gitCached struct {
@@ -51,7 +53,7 @@ type Fleet struct {
 	mu        sync.Mutex
 	hideAfter int64 // ms; 0 = never auto-hide
 	sessions  map[string]*entry
-	pids      map[int]string // claude PID → session_id
+	pids      map[int]string // agent PID → session_id (agents with Caps.PIDAttribution)
 	account   model.Account
 	git       GitLookup
 	gitCache  map[string]gitCached
@@ -116,7 +118,7 @@ func (f *Fleet) Dismiss(id string, now int64) error {
 	if !ok {
 		return ErrNotFound
 	}
-	if st, _ := derive.Status(&e.T, now); st != derive.StatusIdle && st != derive.StatusDone {
+	if st, _ := derive.Status(&e.T, now); !derive.Quiet(st) {
 		return ErrActive
 	}
 	e.S.DismissedAt = now
@@ -173,6 +175,9 @@ func (f *Fleet) Account() model.Account {
 	return f.account
 }
 
+// Normalize turns an envelope into a stored event. Hooks go through their agent's adapter
+// first, so everything after this point reads the canonical schema. Only hook and status
+// events say which agent sent them; CLI/API progress reports never set a session's agent.
 func (f *Fleet) Normalize(env model.Envelope, now int64) (model.Event, bool) {
 	ts := env.TS
 	if ts <= 0 || ts > now+clockSkew || ts < now-clockSkew {
@@ -182,8 +187,6 @@ func (f *Fleet) Normalize(env model.Envelope, now int64) (model.Event, bool) {
 	if len(raw) == 0 || !json.Valid(raw) {
 		raw = json.RawMessage(`{}`)
 	}
-	raw = trimPayload(raw)
-	p := parse(raw)
 
 	source := env.Source
 	switch source {
@@ -191,26 +194,70 @@ func (f *Fleet) Normalize(env model.Envelope, now int64) (model.Event, bool) {
 	default:
 		source = model.SourceAPI
 	}
-	kind := env.Kind
+	kind, name, native, key := env.Kind, "", "", ""
 	switch source {
 	case model.SourceHook:
-		kind = model.KindForHook(p.HookEvent)
+		name = env.Agent
+		if name == "" {
+			name = agent.Default // hooks installed before TRK knew other agents
+		}
+		a, ok := agent.Get(name)
+		if !ok {
+			return model.Event{}, false
+		}
+		n, ok := a.Normalize(raw)
+		if !ok {
+			return model.Event{}, false
+		}
+		raw, kind, native, key = n.Payload, n.Kind, n.Native, n.Key
+		raw = flag(raw, "trk_background", n.Background)
+		raw = flag(raw, "trk_defer", n.Defer)
 	case model.SourceStatusline:
-		kind = model.KindStatus
+		kind, name = model.KindStatus, env.Agent
+		if name == "" {
+			name = agent.Default
+		}
 	}
 	if kind == "" {
 		kind = model.KindOther
 	}
+	raw = trimPayload(raw)
+	p := parse(raw)
+	if source == model.SourceStatusline {
+		native = p.SessionID
+	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	sid, attr := f.resolve(env, source, p, now)
+	sid, attr := f.resolve(env, source, name, native, p, now)
 	if kind == model.KindStatus {
 		if e := f.sessions[sid]; e != nil && e.statusHash == statusKey(p) {
 			return model.Event{}, false
 		}
 	}
-	return model.Event{TS: ts, SessionID: sid, Source: source, Kind: kind, Payload: raw, Attribution: attr}, true
+	if attr != model.AttrNative {
+		native = ""
+	}
+	if native == "" && attr == model.AttrNative {
+		_, native = agent.Split(sid)
+	}
+	return model.Event{Agent: name, NativeID: native, Key: key, TS: ts, SessionID: sid, Source: source, Kind: kind, Payload: raw, Attribution: attr}, true
+}
+
+// flag sets a TRK-owned boolean in a payload object (only when true: the common case stays byte-identical).
+func flag(raw json.RawMessage, k string, on bool) json.RawMessage {
+	if !on {
+		return raw
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil || m == nil {
+		return raw
+	}
+	m[k] = json.RawMessage("true")
+	if b, err := json.Marshal(m); err == nil {
+		return b
+	}
+	return raw
 }
 
 // statusKey hashes only the status-line fields TRK uses, so refreshes that change
@@ -242,8 +289,12 @@ func hash(b []byte) uint64 {
 	return h.Sum64()
 }
 
-func (f *Fleet) resolve(env model.Envelope, source string, p payload, now int64) (string, string) {
+func (f *Fleet) resolve(env model.Envelope, source, name, native string, p payload, now int64) (string, string) {
+	fromAgent := source == model.SourceHook || source == model.SourceStatusline
 	learn := func(sid string) {
+		if fromAgent && !agent.CapsOf(name).PIDAttribution {
+			return // one process may host many sessions: a pid says nothing
+		}
 		if env.ClaudePID <= 0 || sid == "" || f.pids[env.ClaudePID] == sid {
 			return
 		}
@@ -252,9 +303,10 @@ func (f *Fleet) resolve(env model.Envelope, source string, p payload, now int64)
 			f.OnLearn(env.ClaudePID, sid)
 		}
 	}
-	if (source == model.SourceHook || source == model.SourceStatusline) && p.SessionID != "" {
-		learn(p.SessionID)
-		return p.SessionID, model.AttrNative
+	if fromAgent && native != "" {
+		sid := agent.SessionKey(name, native)
+		learn(sid)
+		return sid, model.AttrNative
 	}
 	if env.SessionID != "" {
 		if env.SessionVia == model.AttrEnv {
@@ -263,7 +315,7 @@ func (f *Fleet) resolve(env model.Envelope, source string, p payload, now int64)
 		learn(env.SessionID)
 		return env.SessionID, model.AttrNative
 	}
-	if sid, ok := f.pids[env.ClaudePID]; ok && env.ClaudePID > 0 {
+	if sid, ok := f.pids[env.ClaudePID]; ok && env.ClaudePID > 0 && (!fromAgent || agent.CapsOf(name).PIDAttribution) {
 		return sid, model.AttrPtree
 	}
 	cwd := p.cwd()
@@ -277,8 +329,10 @@ func (f *Fleet) resolve(env model.Envelope, source string, p payload, now int64)
 	return "cwd-" + hex.EncodeToString(sum[:])[:8], model.AttrCwd
 }
 
-// matchCwd picks the most plausible live session for a working directory:
-// exact cwd > caller in a subdirectory, then same git branch, then most recent.
+// matchCwd picks the most plausible live session for a working directory. Among agents
+// with Caps.CwdBestMatch: exact cwd > caller in a subdirectory, then same git branch, then
+// most recent. Other agents' sessions count only as the single live session in that exact
+// folder: a guess between two of their chats would report progress to the wrong one.
 func (f *Fleet) matchCwd(cwd string, now int64) string {
 	if cwd == "" {
 		return ""
@@ -286,11 +340,18 @@ func (f *Fleet) matchCwd(cwd string, now int64) string {
 	cwd = filepath.Clean(cwd)
 	branch := f.gitInfo(cwd, now).Branch
 	best, bestScore, bestLast := "", 0, int64(0)
+	only, others := "", 0
 	for sid, e := range f.sessions {
-		if e.S.Cwd == "" {
+		if e.S.Cwd == "" || e.S.Background || e.deferred {
 			continue
 		}
-		if st, _ := derive.Status(&e.T, now); st == derive.StatusDone {
+		if st, _ := derive.Status(&e.T, now); st == derive.StatusDone || st == derive.StatusInterrupted {
+			continue
+		}
+		if e.S.Agent != "" && !agent.CapsOf(e.S.Agent).CwdBestMatch {
+			if filepath.Clean(e.S.Cwd) == cwd {
+				only, others = sid, others+1
+			}
 			continue
 		}
 		sc := filepath.Clean(e.S.Cwd)
@@ -309,6 +370,9 @@ func (f *Fleet) matchCwd(cwd string, now int64) string {
 		if score > bestScore || (score == bestScore && e.S.LastEventAt > bestLast) {
 			best, bestScore, bestLast = sid, score, e.S.LastEventAt
 		}
+	}
+	if best == "" && others == 1 {
+		return only
 	}
 	return best
 }
@@ -332,6 +396,26 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 		f.sessions[ev.SessionID] = e
 	}
 	s, t := &e.S, &e.T
+	if ev.Agent != "" {
+		s.Agent = ev.Agent
+	}
+	if ev.NativeID != "" {
+		s.NativeID = ev.NativeID
+	}
+	caps := agent.CapsOf(s.Agent)
+	if p.Background {
+		s.Background = true // sticky: the agent's own work never becomes a user's session
+	}
+	if p.Defer && s.LastPrompt == "" && s.Task == "" && len(t.Calls) == 0 {
+		e.deferred = true
+	}
+	switch ev.Kind {
+	case model.KindPrompt, model.KindStart, model.KindToolPre, model.KindToolPost, model.KindToolFail:
+		e.deferred = false
+	}
+	// Hooks run async: a start or prompt older than the turn's end must not reopen it.
+	ended := max(t.DoneAt, t.Interrupted)
+	stale := ended > 0 && ev.TS < ended
 	if ev.TS > s.LastEventAt {
 		s.LastEventAt = ev.TS
 	}
@@ -353,7 +437,10 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 		if m := p.modelName(); m != "" {
 			s.Model = m
 		}
-		t.DoneAt = 0
+		if stale {
+			break
+		}
+		t.DoneAt, t.Interrupted = 0, 0
 		t.ClearPending(ev.TS)
 	case model.KindStart:
 		s.Task, s.StepN, s.StepI, s.StepText = p.Text, p.Steps, 0, ""
@@ -381,11 +468,14 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 			s.StepI = s.StepN
 		}
 	case model.KindPrompt:
-		t.ClearPending(ev.TS)
-		t.Blocked, t.DoneAt = nil, 0
-		if txt := cardText(p.Prompt, false); txt != "" {
+		if txt := cardText(p.Prompt, false); txt != "" && ev.TS >= s.LastPromptAt {
 			s.LastPrompt, s.LastPromptAt = txt, ev.TS
 		}
+		if stale {
+			break
+		}
+		t.ClearPending(ev.TS)
+		t.Blocked, t.DoneAt, t.Interrupted = nil, 0, 0
 	case model.KindSubagentStop:
 		// An untyped agent finishing after the turn ended is Claude Code's own
 		// background agent, not one the session spawned.
@@ -395,9 +485,13 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 		}
 	case model.KindToolPre:
 		t.ToolStart(f.call(p, s.Cwd, ev.TS))
+		if caps.StopEndsTools && stale {
+			t.FinishCalls(ended) // arrived after its turn ended
+		}
 	case model.KindToolPost, model.KindToolFail:
 		c := f.call(p, s.Cwd, 0)
 		c.End, c.Failed = ev.TS, ev.Kind == model.KindToolFail
+		c.Unknown = !c.Failed && p.ToolOutcome == "unknown"
 		t.ToolEnd(c)
 		t.ClearPending(ev.TS)
 	case model.KindPermission:
@@ -419,6 +513,9 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 			t.DoneAt = ev.TS
 		}
 		t.ClearPending(ev.TS)
+		if caps.StopEndsTools || ev.Kind == model.KindSessionEnd {
+			t.FinishCalls(ev.TS)
+		}
 		if ev.Kind == model.KindStop {
 			if txt := cardText(p.LastAssistant, true); txt != "" {
 				s.LastReply, s.LastReplyAt = txt, ev.TS
@@ -432,6 +529,13 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 				}
 			}
 		}
+	case model.KindInterrupt:
+		if ev.TS > t.Interrupted {
+			t.Interrupted = ev.TS
+		}
+		t.ClearPending(ev.TS)
+		t.Blocked = nil
+		t.FinishCalls(ev.TS)
 	case model.KindStatus:
 		e.statusHash = statusKey(p)
 		f.applyStatus(s, p, ev.TS)
@@ -443,7 +547,19 @@ func (f *Fleet) Apply(ev model.Event, now int64) model.Session {
 
 func (f *Fleet) call(p payload, cwd string, start int64) derive.ToolCall {
 	sum, key, file, edit := derive.Describe(p.ToolName, p.ToolInput, cwd)
-	return derive.ToolCall{ID: p.ToolUseID, Tool: p.ToolName, Summary: sum, Key: key, File: file, Edit: edit, Start: start}
+	c := derive.ToolCall{ID: p.ToolUseID, Tool: p.ToolName, Summary: sum, Key: key, File: file, Edit: edit, Start: start, Kind: p.ToolKind}
+	if files := derive.ResolveFiles(p.ToolFiles, cwd); len(files) > 0 {
+		c.File, c.Files = files[0], files
+		rels := make([]string, len(files))
+		for i, f := range files {
+			rels[i] = derive.Rel(f, cwd)
+		}
+		c.Summary = derive.Trunc(strings.Join(rels, ", "))
+	}
+	if c.Kind == "edit" {
+		c.Edit = true
+	}
+	return c
 }
 
 func (f *Fleet) applyStatus(s *model.Session, p payload, ts int64) {

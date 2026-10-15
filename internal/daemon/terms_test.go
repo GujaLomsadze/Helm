@@ -183,3 +183,58 @@ func waitFor(t *testing.T, ok func() bool, what string) {
 }
 
 func jsonStr(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+func TestCodexTerminalLinksByTerminalID(t *testing.T) {
+	ts, srv := newTestServer(t)
+	fake := filepath.Join(t.TempDir(), "codex")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexec cat\n"), 0o755); err != nil { // ignores codex's arguments
+		t.Fatal(err)
+	}
+	srv.terms.Command = fake
+	t.Cleanup(srv.CloseTerminals)
+	srv.SetTerminals(true)
+	dir := t.TempDir()
+	r := postJSON(t, ts.URL+"/v1/terms", `{"agent":"codex","title":"Bump deps","dir":`+jsonStr(dir)+`}`)
+	if r.StatusCode != http.StatusCreated {
+		t.Fatal(r.StatusCode)
+	}
+	var info struct{ ID, Agent string }
+	_ = json.NewDecoder(r.Body).Decode(&info)
+	if info.Agent != "codex" {
+		t.Fatal(info)
+	}
+	hook := func(sid, event string) {
+		post(t, ts.URL, fmt.Sprintf(`{"source":"hook","agent":"codex","terminal_id":%q,"payload":{"session_id":%q,"hook_event_name":%q,"cwd":%q,"prompt":"go"}}`, info.ID, sid, event, dir), nil)
+	}
+	hook("root", "SessionStart")
+	hook("child", "SessionStart") // a subagent thread from the same terminal
+	var view struct {
+		Running   map[string]string `json:"running"`
+		Terminals []struct {
+			ID        string `json:"id"`
+			SessionID string `json:"session_id"`
+		} `json:"terminals"`
+	}
+	getJSON(t, ts.URL+"/v1/sessions", &view)
+	if view.Running["codex:root"] != info.ID || view.Terminals[0].SessionID != "codex:root" {
+		t.Fatalf("%+v", view)
+	}
+	if row, _ := srv.fl.SessionRow("codex:root"); row.Title != "Bump deps" {
+		t.Fatalf("title %q", row.Title)
+	}
+	// Resuming a session that is running (here: linked to a live terminal) is refused.
+	if r := postJSON(t, ts.URL+"/v1/terms", `{"agent":"codex","resume":"root","dir":`+jsonStr(dir)+`}`); r.StatusCode != http.StatusConflict {
+		t.Fatalf("resume running = %d", r.StatusCode)
+	}
+	// One that looks busy elsewhere is refused too: there is no process to check.
+	hook("elsewhere", "UserPromptSubmit")
+	if r := postJSON(t, ts.URL+"/v1/terms", `{"agent":"codex","resume":"elsewhere","dir":`+jsonStr(dir)+`}`); r.StatusCode != http.StatusConflict {
+		t.Fatalf("resume busy = %d", r.StatusCode)
+	}
+	if r := postJSON(t, ts.URL+"/v1/terms", `{"agent":"codex","resume":"elsewhere","fork":true,"dir":`+jsonStr(dir)+`}`); r.StatusCode != http.StatusCreated {
+		t.Fatalf("fork = %d", r.StatusCode)
+	}
+	if r := postJSON(t, ts.URL+"/v1/terms", `{"agent":"nope","dir":`+jsonStr(dir)+`}`); r.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown agent = %d", r.StatusCode)
+	}
+}

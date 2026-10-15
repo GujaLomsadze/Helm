@@ -13,15 +13,29 @@ const (
 )
 
 type ToolCall struct {
-	ID      string `json:"-"` // tool_use_id
-	Tool    string `json:"tool"`
-	Summary string `json:"summary"`
-	Key     string `json:"-"` // tool + normalized input
-	File    string `json:"file,omitempty"`
-	Edit    bool   `json:"edit,omitempty"`
-	Start   int64  `json:"start"`
-	End     int64  `json:"end,omitempty"` // 0 while running
-	Failed  bool   `json:"failed,omitempty"`
+	ID      string   `json:"-"` // tool_use_id
+	Tool    string   `json:"tool"`
+	Summary string   `json:"summary"`
+	Key     string   `json:"-"` // tool + normalized input
+	File    string   `json:"file,omitempty"`
+	Files   []string `json:"files,omitempty"` // every file, when the call names more than one (patches)
+	Kind    string   `json:"-"`               // read|edit|run from the agent; "" = by tool name
+	Edit    bool     `json:"edit,omitempty"`
+	Start   int64    `json:"start"`
+	End     int64    `json:"end,omitempty"` // 0 while running
+	Failed  bool     `json:"failed,omitempty"`
+	Unknown bool     `json:"unknown,omitempty"` // ended, but the agent didn't say how
+}
+
+// Paths is every file the call touched.
+func (c ToolCall) Paths() []string {
+	if len(c.Files) > 0 {
+		return c.Files
+	}
+	if c.File != "" {
+		return []string{c.File}
+	}
+	return nil
 }
 
 type Need struct {
@@ -44,6 +58,7 @@ type Tracker struct {
 	Pending      *Need // permission prompt / question awaiting the human
 	LastClear    int64 // latest event that resolves Pending
 	DoneAt       int64 // done/stop/session_end
+	Interrupted  int64 // the user stopped the turn
 	LastActivity int64
 	Calls        []ToolCall
 	Waits        []Span
@@ -114,13 +129,23 @@ func (t *Tracker) ToolStart(c ToolCall) {
 
 func (t *Tracker) ToolEnd(c ToolCall) {
 	if i := t.find(c.ID); i >= 0 {
-		t.Calls[i].End, t.Calls[i].Failed = c.End, c.Failed
+		t.Calls[i].End, t.Calls[i].Failed, t.Calls[i].Unknown = c.End, c.Failed, c.Unknown
 		return
 	}
 	if c.Start == 0 {
 		c.Start = c.End
 	}
 	t.insert(c)
+}
+
+// FinishCalls ends calls still open at ts (a turn that ended or was interrupted) without
+// claiming they worked.
+func (t *Tracker) FinishCalls(ts int64) {
+	for i := range t.Calls {
+		if t.Calls[i].End == 0 && t.Calls[i].Start <= ts {
+			t.Calls[i].End, t.Calls[i].Unknown = ts, true
+		}
+	}
 }
 
 func (t *Tracker) Prune(now int64) {

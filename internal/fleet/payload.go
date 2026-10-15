@@ -15,14 +15,19 @@ type payload struct {
 	I     int    `json:"i"`
 	N     int    `json:"n"`
 	// shared
-	SessionID string          `json:"session_id"`
-	Cwd       string          `json:"cwd"`
-	Model     json.RawMessage `json:"model"` // string (SessionStart) or object (status line)
+	SessionID  string          `json:"session_id"`
+	Background bool            `json:"trk_background"`
+	Defer      bool            `json:"trk_defer"`
+	Cwd        string          `json:"cwd"`
+	Model      json.RawMessage `json:"model"` // string (SessionStart) or object (status line)
 	// hooks
 	HookEvent        string          `json:"hook_event_name"`
 	ToolName         string          `json:"tool_name"`
 	ToolInput        json.RawMessage `json:"tool_input"`
 	ToolUseID        string          `json:"tool_use_id"`
+	ToolFiles        []string        `json:"tool_files"`
+	ToolKind         string          `json:"tool_kind"`
+	ToolOutcome      string          `json:"tool_outcome"`
 	Message          string          `json:"message"`
 	NotificationType string          `json:"notification_type"`
 	Prompt           string          `json:"prompt"`

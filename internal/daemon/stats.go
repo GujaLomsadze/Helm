@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/GujaLomsadze/trk/internal/agent"
 	"net/http"
 	"sort"
 	"strconv"
@@ -24,7 +25,7 @@ type statsCache struct {
 	body stats.Result
 }
 
-// getStats serves the Stats page: GET /v1/stats?days=7&tz=-120&repos=TRK,arrow
+// getStats serves the Stats page: GET /v1/stats?days=7&tz=-120&repos=TRK,arrow&agent=codex
 // days counts local calendar days ending today (1–90); tz is the browser's getTimezoneOffset().
 func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -52,8 +53,13 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sort.Strings(keys)
+	ag := q.Get("agent")
+	if _, ok := agent.Get(ag); ag != "" && !ok {
+		http.Error(w, "unknown agent", http.StatusBadRequest)
+		return
+	}
 	now := s.now()
-	key := strconv.Itoa(days) + "|" + strconv.Itoa(tz) + "|" + strings.Join(keys, ",")
+	key := strconv.Itoa(days) + "|" + strconv.Itoa(tz) + "|" + strings.Join(keys, ",") + "|" + ag
 	s.stats.mu.Lock()
 	defer s.stats.mu.Unlock() // one computation at a time; a burst of reloads waits for the first
 	if s.stats.key == key && now-s.stats.at < statsTTL {
@@ -62,7 +68,7 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 	}
 	off := int64(tz) * 60000
 	since := floorDiv(now-off, dayMs)*dayMs + off - int64(days-1)*dayMs
-	in := stats.Input{PrevSince: since - int64(days)*dayMs, Since: since, Until: now + 1, Days: days, TZOffsetMin: tz, Repos: repos,
+	in := stats.Input{PrevSince: since - int64(days)*dayMs, Since: since, Until: now + 1, Days: days, TZOffsetMin: tz, Repos: repos, Agent: ag,
 		Prior: map[string]store.StatRow{}, Meta: map[string]stats.Meta{}}
 	if in.Rows, err = s.st.StatRows(in.PrevSince, in.Until); err != nil {
 		s.log.Printf("stats: %v", err)
@@ -87,7 +93,7 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			name = x.Name
 		}
-		in.Meta[x.SessionID] = stats.Meta{Name: name, Repo: x.Repo, Model: x.Model, Cwd: x.Cwd}
+		in.Meta[x.SessionID] = stats.Meta{Name: name, Repo: x.Repo, Model: x.Model, Cwd: x.Cwd, Agent: x.Agent, Background: x.Background}
 	}
 	res := stats.Compute(in)
 	s.stats.key, s.stats.at, s.stats.body = key, now, res

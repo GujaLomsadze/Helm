@@ -60,7 +60,12 @@ func NormPath(p string) string {
 	return path.Clean(strings.ReplaceAll(p, `\`, "/"))
 }
 
-func Category(tool string) string {
+// Category is read|edit|run; an agent's own kind for the call wins over the tool name.
+func Category(tool, kind string) string {
+	switch kind {
+	case "read", "edit", "run":
+		return kind
+	}
 	switch tool {
 	case "Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "NotebookRead":
 		return "read"
@@ -69,6 +74,31 @@ func Category(tool string) string {
 	}
 	return "run"
 }
+
+// ResolveFiles makes an agent's file list absolute against cwd, one spelling each.
+func ResolveFiles(files []string, cwd string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range files {
+		if f = NormPath(f); f == "" {
+			continue
+		}
+		if !path.IsAbs(f) && !(len(f) > 2 && f[1] == ':') && cwd != "" { // Windows drive paths are absolute too
+			f = path.Join(NormPath(cwd), f)
+		}
+		if !seen[f] {
+			out = append(out, f)
+			seen[f] = true
+		}
+	}
+	return out
+}
+
+// Rel shows p relative to cwd when it is inside it.
+func Rel(p, cwd string) string { return rel(p, cwd) }
+
+// Trunc caps a summary at maxSummary characters.
+func Trunc(s string) string { return trunc(s) }
 
 func rel(p, cwd string) string {
 	if cwd != "" {
