@@ -5,6 +5,7 @@ package term
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -207,9 +208,15 @@ func TestScrollbackIsCapped(t *testing.T) {
 }
 
 func TestTerminalIDAndLinkFirst(t *testing.T) {
-	m := newTestManager("sh")
+	// A stand-in that ignores codex's arguments and keeps running (sh would exit at once
+	// on --no-daemon, and an exited terminal never links).
+	fake := filepath.Join(t.TempDir(), "codex")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexec cat\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := newTestManager(fake)
 	t.Cleanup(m.Close)
-	tm, err := m.Start(Spec{Dir: t.TempDir(), Agent: "codex", Prompt: "-c"}) // sh -- -c: harmless
+	tm, err := m.Start(Spec{Dir: t.TempDir(), Agent: "codex", Prompt: "-c"})
 	if err != nil {
 		t.Fatal(err)
 	}
