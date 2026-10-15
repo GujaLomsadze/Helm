@@ -174,7 +174,7 @@ Two active sessions touching the same file path within 10 min → collision entr
 ## 7. Dashboard UI
 
 ### 7.1 MVP layout (Fleet view, single page, responsive)
-1. **Header bar:** title `HELM.EXE`, subtitle (`fleet monitor · localhost:7777`), stats (agents, working, needs you, tokens today), **plan limits** (5h and 7d bars with reset countdowns), view nav (Fleet now; Timeline/Orbit later).
+1. **Header bar:** title `HELM`, subtitle (`fleet monitor · localhost:7777`), stats (agents, working, needs you, tokens today), **plan limits** (5h and 7d bars with reset countdowns), view nav (Fleet now; Timeline/Orbit later).
 2. **Main grid (left, ~2/3):** one card per agent session. Sort: needs-you first, then working, then idle/done.
 3. **Right column (~1/3):** **Needs you** inbox (permission prompts and `blocked` questions from all agents) and **Collisions**.
 4. **Bottom:** **Last 30 minutes** swimlane timeline, one lane per agent, blocks colored by activity (read / edit / run / waiting on you), horizontal scroll on narrow screens.

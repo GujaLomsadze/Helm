@@ -126,7 +126,7 @@ func TestHealthzAndIndex(t *testing.T) {
 	}
 	resp, _ := http.Get(ts.URL + "/")
 	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 || !strings.Contains(string(b), "HELM.EXE") {
+	if resp.StatusCode != 200 || !strings.Contains(string(b), "HELM") {
 		t.Fatalf("index = %d %q", resp.StatusCode, b)
 	}
 }

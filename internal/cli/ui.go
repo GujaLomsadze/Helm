@@ -34,7 +34,7 @@ func (u ui) bold(s string) string   { return u.paint("1", s) }
 func (u ui) dim(s string) string    { return u.paint("2", s) }
 
 func (u ui) banner(w io.Writer, subtitle string) {
-	fmt.Fprintf(w, "\n  %s  %s\n\n", u.accent("HELM.EXE"), u.dim(subtitle))
+	fmt.Fprintf(w, "\n  %s  %s\n\n", u.accent("HELM"), u.dim(subtitle))
 }
 
 // row prints "  ✓ Label        detail".

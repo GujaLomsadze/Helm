@@ -45,7 +45,7 @@ func updateCmd(args []string, stdout, stderr io.Writer) int {
 	check := len(args) > 0 && args[0] == "--check"
 	if isSourceBuild() {
 		fmt.Fprintf(stdout, "\n  %s  %s\n\n  This is a source build (%s). Update with:\n    %s\n\n",
-			u.accent("HELM.EXE"), u.dim("update"), version.Version, u.accent("git pull && make install"))
+			u.accent("HELM"), u.dim("update"), version.Version, u.accent("git pull && make install"))
 		return 0
 	}
 	u.banner(stdout, "update")

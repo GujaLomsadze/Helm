@@ -13,7 +13,7 @@ fi
 step() { printf '  %s✓%s %s\n' "$OK" "$R" "$1"; }
 die() { printf '  %s✗%s %s\n' "$W" "$R" "$1" >&2; exit 1; }
 
-printf '\n  %sHELM.EXE%s  %sinstaller%s\n\n' "$A" "$R" "$D" "$R"
+printf '\n  %sHELM%s  %sinstaller%s\n\n' "$A" "$R" "$D" "$R"
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$os" in
