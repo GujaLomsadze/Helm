@@ -3,8 +3,8 @@ package fleet
 import (
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/derive"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/derive"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 func TestViewSortCollisionsAndHiding(t *testing.T) {

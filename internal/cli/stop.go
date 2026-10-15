@@ -5,16 +5,16 @@ import (
 	"io"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/client"
-	"github.com/GujaLomsadze/trk/internal/config"
+	"github.com/GujaLomsadze/helm/internal/client"
+	"github.com/GujaLomsadze/helm/internal/config"
 )
 
-// stopCmd pauses TRK and shuts the daemon down. While paused, hooks and agent
-// calls skip silently, so nothing brings the daemon back until `trk open`.
+// stopCmd pauses Helm and shuts the daemon down. While paused, hooks and agent
+// calls skip silently, so nothing brings the daemon back until `hlm open`.
 func stopCmd(stdout, stderr io.Writer) int {
 	u := newUI(stdout)
 	if err := config.SetPaused(true); err != nil {
-		fmt.Fprintf(stderr, "trk stop: %v\n", err)
+		fmt.Fprintf(stderr, "hlm stop: %v\n", err)
 		return 1
 	}
 	c := client.Default()
@@ -37,7 +37,7 @@ func stopCmd(stdout, stderr io.Writer) int {
 		u.row(stdout, u.dim("·"), "Service", u.dim("wasn't running"))
 	}
 	u.row(stdout, u.ok("✓"), "Hooks", "paused"+u.dim(" — Claude keeps working normally, nothing is recorded"))
-	fmt.Fprintf(stdout, "\n  Start again with %s\n\n", u.accent("trk open"))
+	fmt.Fprintf(stdout, "\n  Start again with %s\n\n", u.accent("hlm open"))
 	return 0
 }
 

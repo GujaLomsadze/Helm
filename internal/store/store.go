@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 	_ "modernc.org/sqlite"
 )
 

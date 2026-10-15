@@ -43,7 +43,7 @@ func TestLimitsProcess(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), deadline)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestLimitsProcessHelper$")
-			cmd.Env = append(os.Environ(), "TRK_LIMIT_HELPER="+mode)
+			cmd.Env = append(os.Environ(), "HLM_LIMIT_HELPER="+mode)
 			quietProcess(cmd)
 			start := time.Now()
 			b, err := readLimitsProcess(cmd)
@@ -65,7 +65,7 @@ func TestLimitsProcess(t *testing.T) {
 }
 
 func TestLimitsProcessHelper(t *testing.T) {
-	mode := os.Getenv("TRK_LIMIT_HELPER")
+	mode := os.Getenv("HLM_LIMIT_HELPER")
 	if mode == "" {
 		return
 	}

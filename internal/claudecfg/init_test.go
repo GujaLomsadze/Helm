@@ -15,11 +15,11 @@ func paths(t *testing.T) Paths {
 }
 
 func opts(p Paths, chain bool) InitOptions {
-	return InitOptions{Paths: p, TrkCmd: trk, ChainStatus: func(string) bool { return chain }, Now: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)}
+	return InitOptions{Paths: p, HlmCmd: hlm, ChainStatus: func(string) bool { return chain }, Now: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)}
 }
 
 func backups(t *testing.T, p string) []string {
-	m, _ := filepath.Glob(p + ".trk-backup-*")
+	m, _ := filepath.Glob(p + ".hlm-backup-*")
 	return m
 }
 
@@ -31,7 +31,7 @@ func TestInitFreshMachine(t *testing.T) {
 	}
 	b, _ := os.ReadFile(p.Settings)
 	md, _ := os.ReadFile(p.ClaudeMD)
-	if !strings.Contains(string(b), trk+" hook") || string(md) != Snippet {
+	if !strings.Contains(string(b), hlm+" hook") || string(md) != Snippet {
 		t.Fatalf("settings=%s md=%q", b, md)
 	}
 }
@@ -45,7 +45,7 @@ func TestInitExistingThenIdempotent(t *testing.T) {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 	orig, _ := os.ReadFile(res.SettingsBackup)
-	if !strings.Contains(string(orig), `"ccstatusline"`) || strings.Contains(string(orig), "trk") {
+	if !strings.Contains(string(orig), `"ccstatusline"`) || strings.Contains(string(orig), "hlm") {
 		t.Fatal("backup is not the original")
 	}
 	if st, _ := os.Stat(p.Settings); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
@@ -105,7 +105,7 @@ func TestInitFollowsSymlink(t *testing.T) {
 		t.Fatal("symlink replaced by a file")
 	}
 	b, _ := os.ReadFile(target)
-	if !strings.Contains(string(b), "trk") {
+	if !strings.Contains(string(b), "hlm") {
 		t.Fatal("target not updated")
 	}
 }

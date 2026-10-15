@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	_ "github.com/GujaLomsadze/trk/internal/agent/all"
-	"github.com/GujaLomsadze/trk/internal/cfgfile"
-	"github.com/GujaLomsadze/trk/internal/client"
-	"github.com/GujaLomsadze/trk/internal/config"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	_ "github.com/GujaLomsadze/helm/internal/agent/all"
+	"github.com/GujaLomsadze/helm/internal/cfgfile"
+	"github.com/GujaLomsadze/helm/internal/client"
+	"github.com/GujaLomsadze/helm/internal/config"
 	"golang.org/x/term"
 )
 
@@ -35,7 +35,7 @@ func initCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	a, ok := agent.Get(*name)
 	if !ok {
-		fmt.Fprintf(stderr, "trk init: unknown agent %q (one of: %s)\n", *name, agentNames())
+		fmt.Fprintf(stderr, "hlm init: unknown agent %q (one of: %s)\n", *name, agentNames())
 		return 2
 	}
 	in := bufio.NewReader(stdin)
@@ -52,10 +52,10 @@ func initCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		ans := strings.ToLower(strings.TrimSpace(line))
 		return ans == "" || ans == "y" || ans == "yes"
 	}
-	res, err := a.Install(agent.InstallOptions{TrkCmd: trkCommand(), DryRun: *dry, Instructions: *mdPath,
+	res, err := a.Install(agent.InstallOptions{HlmCmd: hlmCommand(), DryRun: *dry, Instructions: *mdPath,
 		SkipInstructions: *noMD, SkipStatusLine: *noStatus, Confirm: confirm, Now: time.Now()})
 	if err != nil {
-		fmt.Fprintf(stderr, "trk init: %v\n", err)
+		fmt.Fprintf(stderr, "hlm init: %v\n", err)
 		return 1
 	}
 	daemonUp := false
@@ -84,7 +84,7 @@ func renderOthers(w io.Writer, u ui, done string) {
 		}
 		if l, err := a.Launch(agent.LaunchSpec{}); err == nil {
 			if _, err := exec.LookPath(l.Exe); err == nil {
-				cmd := "trk init"
+				cmd := "hlm init"
 				if a.Name() != agent.Default {
 					cmd += " --agent " + a.Name()
 				}
@@ -99,18 +99,27 @@ func isTTY(r io.Reader) bool {
 	return ok && term.IsTerminal(int(f.Fd()))
 }
 
-// trkCommand returns the command hooks should run: an absolute, stable path.
-func trkCommand() string {
+// hlmCommand returns the command hooks should run: an absolute, stable path.
+func hlmCommand() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return "trk"
+		return "hlm"
 	}
-	if lp, err := exec.LookPath("trk"); err == nil {
+	if lp, err := exec.LookPath("hlm"); err == nil {
 		if a, e1 := os.Stat(lp); e1 == nil {
 			if b, e2 := os.Stat(exe); e2 == nil && os.SameFile(a, b) {
 				if abs, err := filepath.Abs(lp); err == nil {
 					exe = abs
 				}
+			}
+		}
+	}
+	// Still the file named trk (updated from TRK)? Hooks call the hlm next to it.
+	if b := strings.TrimSuffix(filepath.Base(exe), ".exe"); b == "trk" {
+		sib := filepath.Join(filepath.Dir(exe), "hlm"+strings.TrimPrefix(filepath.Base(exe), "trk"))
+		if a, e1 := os.Stat(sib); e1 == nil {
+			if b, e2 := os.Stat(exe); e2 == nil && (os.SameFile(a, b) || a.Size() == b.Size()) {
+				exe = sib
 			}
 		}
 	}

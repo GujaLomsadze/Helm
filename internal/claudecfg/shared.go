@@ -1,6 +1,6 @@
 package claudecfg
 
-import "github.com/GujaLomsadze/trk/internal/cfgfile"
+import "github.com/GujaLomsadze/helm/internal/cfgfile"
 
 // The JSON editing, file safety and progress block are shared with every agent installer.
 type Object = cfgfile.Object

@@ -7,7 +7,7 @@ func TestFindClaude(t *testing.T) {
 		100: {PPID: 1, Name: "zsh"},
 		200: {PPID: 100, Name: "claude"},
 		300: {PPID: 200, Name: "zsh"},
-		400: {PPID: 300, Name: "trk"},
+		400: {PPID: 300, Name: "hlm"},
 		500: {PPID: 100, Name: "node", Cmdline: "node /usr/lib/node_modules/@anthropic-ai/claude-code/cli.js"},
 		600: {PPID: 500, Name: "bash"},
 		700: {PPID: 100, Name: "node", Cmdline: "node server.js"},
@@ -40,7 +40,7 @@ func TestParseStat(t *testing.T) {
 
 func TestTable(t *testing.T) {
 	table := map[int]proc{
-		100: {PPID: 1, Name: "trk"},
+		100: {PPID: 1, Name: "hlm"},
 		200: {PPID: 100, Name: "claude"},
 		300: {PPID: 200, Name: "zsh"},
 		400: {PPID: 1, Name: "vim"},

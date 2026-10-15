@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/derive"
-	"github.com/GujaLomsadze/trk/internal/store"
+	"github.com/GujaLomsadze/helm/internal/derive"
+	"github.com/GujaLomsadze/helm/internal/store"
 )
 
 const (

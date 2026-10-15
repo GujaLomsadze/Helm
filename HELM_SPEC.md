@@ -1,4 +1,4 @@
-# TRK.exe — Build Spec
+# Helm.exe — Build Spec
 
 A local, single-binary tracker that shows, live, what every coding agent on this machine is doing: progress, status, context usage, plan limits, and who needs a human. Agents report through a tiny CLI; Claude Code hooks and the status line report automatically. A browser dashboard (phosphor CRT theme) visualizes the fleet.
 
@@ -14,7 +14,7 @@ A local, single-binary tracker that shows, live, what every coding agent on this
 - Shows, for every agent session: declared task and progress, actual tool activity, status, context usage, cost, elapsed time.
 - Shows account-wide Claude plan limits (5-hour and weekly) when available.
 - Puts "needs you" (permission prompts, blocked questions) front and center.
-- Never breaks or slows an agent. If TRK is down, agents don't notice.
+- Never breaks or slows an agent. If Helm is down, agents don't notice.
 
 **Non-goals (for now)**
 - Not a remote control for Claude Code. It observes; it does not drive sessions.
@@ -27,7 +27,7 @@ A local, single-binary tracker that shows, live, what every coding agent on this
 
 Two input channels, shown side by side:
 
-1. **Declared intent** — the agent calls `trk start/step/progress/blocked/done`. Says what it *thinks* it's doing.
+1. **Declared intent** — the agent calls `hlm start/step/progress/blocked/done`. Says what it *thinks* it's doing.
 2. **Ground truth** — Claude Code hooks and status line POST events automatically: every tool call, file touched, command run, permission prompt, context %, cost. No agent cooperation needed.
 
 The gap between them is the product's most valuable signal (e.g. "says step 3/5 writing tests; reality: pytest failed 14× in 6 min with the same assertion").
@@ -48,69 +48,69 @@ The gap between them is the product's most valuable signal (e.g. "says step 3/5 
 ## 4. One binary, several roles
 
 ```
-trk serve                     # run daemon + dashboard (usually auto-spawned)
-trk open                      # open dashboard in browser
-trk init                      # one-time setup (hooks, status line, CLAUDE.md snippet)
+hlm serve                     # run daemon + dashboard (usually auto-spawned)
+hlm open                      # open dashboard in browser
+hlm init                      # one-time setup (hooks, status line, CLAUDE.md snippet)
 
 # agent-facing reporting verbs (keep this set tiny)
-trk start "Refactor Kafka consumer" --steps 5
-trk step "Writing tests"
-trk progress 3/5
-trk blocked "Drop or keep legacy topic during cutover?"
-trk done "Tests green, PR ready"
+hlm start "Refactor Kafka consumer" --steps 5
+hlm step "Writing tests"
+hlm progress 3/5
+hlm blocked "Drop or keep legacy topic during cutover?"
+hlm done "Tests green, PR ready"
 
 # integration roles (called by Claude Code, not humans)
-trk hook                      # reads hook JSON on stdin, forwards to daemon
-trk statusline                # reads status line JSON on stdin, forwards, prints a compact line
+hlm hook                      # reads hook JSON on stdin, forwards to daemon
+hlm statusline                # reads status line JSON on stdin, forwards, prints a compact line
 
-trk version
+hlm version
 ```
 
 ### Non-negotiable CLI behavior
-- **Auto-spawn:** any command that finds no daemon starts `trk serve` in the background (detached), then continues. Users never need to remember to start it.
+- **Auto-spawn:** any command that finds no daemon starts `hlm serve` in the background (detached), then continues. Users never need to remember to start it.
 - **Never fail the caller:** every reporting/hook/statusline call has a ~200 ms timeout and **always exits 0**. Daemon down → silent no-op. No stderr noise.
 - **Fast:** the CLI does one HTTP POST and exits.
 
 ### Config (all optional)
-- `TRK_PORT` (default `7777`), `TRK_URL` (full override, e.g. WSL ↔ Windows), `TRK_DATA_DIR`.
-- Data dir defaults: Linux `~/.local/share/trk/`, macOS `~/Library/Application Support/trk/`, Windows `%APPDATA%\trk\`.
+- `HLM_PORT` (default `7777`), `HLM_URL` (full override, e.g. WSL ↔ Windows), `HLM_DATA_DIR`.
+- Data dir defaults: Linux `~/.local/share/hlm/`, macOS `~/Library/Application Support/hlm/`, Windows `%APPDATA%\hlm\`.
 - Bind to `127.0.0.1` only.
 
 ---
 
 ## 5. Integrations
 
-### 5.1 Claude Code hooks → `trk hook`
-`trk init` merges hook entries into `~/.claude/settings.json` pointing at `trk hook` for the relevant events (verify names in docs; expected: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Notification`, `Stop`, `SubagentStop`, `PreCompact`). The handler forwards the raw JSON payload plus a timestamp; parsing happens in the daemon.
+### 5.1 Claude Code hooks → `hlm hook`
+`hlm init` merges hook entries into `~/.claude/settings.json` pointing at `hlm hook` for the relevant events (verify names in docs; expected: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Notification`, `Stop`, `SubagentStop`, `PreCompact`). The handler forwards the raw JSON payload plus a timestamp; parsing happens in the daemon.
 
 Hook payloads include `session_id`, `cwd`, `transcript_path` → primary session key.
 
-### 5.2 Status line → `trk statusline`
+### 5.2 Status line → `hlm statusline`
 Claude Code pipes session JSON to the configured status line command on every update. Fields to use (all optional):
 - `session_id`, `cwd`, `model.display_name`, `workspace`, `version`, `cost`
 - `context_window.used_percentage`, `remaining_percentage`, `context_window_size`, `total_input_tokens`, `total_output_tokens`
 - `rate_limits.five_hour.{used_percentage,resets_at}`, `rate_limits.seven_day.{used_percentage,resets_at}` (Pro/Max only; known to go missing in some versions — show "—")
 
-`trk statusline` forwards the JSON, then prints a compact line (e.g. `trk · ctx 42% · 5h 23% · 7d 61%`).
-**If the user already has a status line**, `trk init` must not overwrite it: offer to chain (`trk statusline --then "<original command>"`, where TRK forwards the data then runs and prints the original script's output).
+`hlm statusline` forwards the JSON, then prints a compact line (e.g. `hlm · ctx 42% · 5h 23% · 7d 61%`).
+**If the user already has a status line**, `hlm init` must not overwrite it: offer to chain (`hlm statusline --then "<original command>"`, where Helm forwards the data then runs and prints the original script's output).
 
 ### 5.3 Agent instructions (CLAUDE.md snippet)
-`trk init` prints/appends this (idempotent, marked block):
+`hlm init` prints/appends this (idempotent, marked block):
 
 ```md
-<!-- trk:begin -->
+<!-- hlm:begin -->
 ## Progress reporting
-Report progress with the `trk` CLI (it never fails; don't check its output):
-- At the start of a task: `trk start "<task>" --steps <N>`
-- When moving to a new step: `trk step "<what you're doing>"` and `trk progress <i>/<N>`
-- When you need a human decision: `trk blocked "<question>"`
-- When finished: `trk done "<one-line result>"`
-<!-- trk:end -->
+Report progress with the `hlm` CLI (it never fails; don't check its output):
+- At the start of a task: `hlm start "<task>" --steps <N>`
+- When moving to a new step: `hlm step "<what you're doing>"` and `hlm progress <i>/<N>`
+- When you need a human decision: `hlm blocked "<question>"`
+- When finished: `hlm done "<one-line result>"`
+<!-- hlm:end -->
 ```
 
 ### 5.4 Session attribution (which agent sent a CLI call?)
-Hooks and status line carry `session_id`; plain `trk step` calls don't. Resolve in this order:
-1. `TRK_SESSION` env var if set.
+Hooks and status line carry `session_id`; plain `hlm step` calls don't. Resolve in this order:
+1. `HLM_SESSION` env var if set.
 2. **Process-tree walk:** CLI walks parent PIDs to find the ancestor `claude` process; hooks/status line do the same. Daemon maps `claude PID → session_id`. (Linux/WSL: `/proc/<pid>/stat`; macOS: `sysctl`/`ps`; Windows: Toolhelp snapshot.)
 3. Fallback: `cwd` + git branch → most recent active session there.
 Store the resolution method on each event for debugging.
@@ -174,7 +174,7 @@ Two active sessions touching the same file path within 10 min → collision entr
 ## 7. Dashboard UI
 
 ### 7.1 MVP layout (Fleet view, single page, responsive)
-1. **Header bar:** title `TRK.EXE`, subtitle (`fleet monitor · localhost:7777`), stats (agents, working, needs you, tokens today), **plan limits** (5h and 7d bars with reset countdowns), view nav (Fleet now; Timeline/Orbit later).
+1. **Header bar:** title `HELM.EXE`, subtitle (`fleet monitor · localhost:7777`), stats (agents, working, needs you, tokens today), **plan limits** (5h and 7d bars with reset countdowns), view nav (Fleet now; Timeline/Orbit later).
 2. **Main grid (left, ~2/3):** one card per agent session. Sort: needs-you first, then working, then idle/done.
 3. **Right column (~1/3):** **Needs you** inbox (permission prompts and `blocked` questions from all agents) and **Collisions**.
 4. **Bottom:** **Last 30 minutes** swimlane timeline, one lane per agent, blocks colored by activity (read / edit / run / waiting on you), horizontal scroll on narrow screens.
@@ -238,20 +238,20 @@ Grid (Tron, cyan on blue-black, faint background grid, Geist/Geist Mono), Ares (
 
 ## 8. Install & distribution
 
-- `curl -fsSL https://<host>/install.sh | sh` → detects OS/arch, installs to `~/.local/bin` (or `/usr/local/bin`), prints next step: `trk init`.
+- `curl -fsSL https://<host>/install.sh | sh` → detects OS/arch, installs to `~/.local/bin` (or `/usr/local/bin`), prints next step: `hlm init`.
 - Homebrew tap, Scoop manifest, winget later.
-- `npx trk` / `uvx trk` thin wrappers that download the matching release binary (anyone running agents has Node or uv).
-- `go install github.com/<you>/trk@latest`.
+- `npx hlm` / `uvx hlm` thin wrappers that download the matching release binary (anyone running agents has Node or uv).
+- `go install github.com/<you>/hlm@latest`.
 
-**WSL note:** run `trk` inside WSL next to Claude Code; WSL2 forwards localhost, so open `http://localhost:7777` in the Windows browser. For agents in both WSL and native Windows, run one daemon and point the other side at it with `TRK_URL` (mirrored networking mode makes this seamless).
+**WSL note:** run `hlm` inside WSL next to Claude Code; WSL2 forwards localhost, so open `http://localhost:7777` in the Windows browser. For agents in both WSL and native Windows, run one daemon and point the other side at it with `HLM_URL` (mirrored networking mode makes this seamless).
 
 ---
 
 ## 9. Suggested repo layout
 
 ```
-trk/
-  cmd/trk/main.go             # subcommand dispatch
+hlm/
+  cmd/hlm/main.go             # subcommand dispatch
   internal/cli/               # start/step/progress/blocked/done, hook, statusline, init, open
   internal/client/            # tiny HTTP client w/ timeout, always-exit-0 wrapper, auto-spawn
   internal/daemon/            # HTTP server, SSE hub, API handlers
@@ -300,8 +300,8 @@ trk/
 
 ## 11. Acceptance criteria for M1
 
-- Fresh machine: install one binary, run `trk init`, start Claude Code → the session appears on `localhost:7777` within seconds, with no manual `trk serve`.
-- Kill the daemon mid-session → the agent continues with zero errors; next `trk` call respawns it.
+- Fresh machine: install one binary, run `hlm init`, start Claude Code → the session appears on `localhost:7777` within seconds, with no manual `hlm serve`.
+- Kill the daemon mid-session → the agent continues with zero errors; next `hlm` call respawns it.
 - Two concurrent Claude Code sessions in different worktrees are shown as separate cards with correct attribution of CLI calls.
 - Permission prompt in a session → card turns WAITING ON YOU and the item appears in the inbox within 1 s.
 - Context % and (when present) 5h/7d limits update live; missing fields render as "—".

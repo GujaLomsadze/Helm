@@ -137,7 +137,7 @@ func TestTerminalLinksSessionAndGuardsResume(t *testing.T) {
 		PID int
 	}
 	_ = json.NewDecoder(r.Body).Decode(&first)
-	post(t, ts.URL, fmt.Sprintf(`{"source":"hook","claude_pid":%d,"payload":{"session_id":"S-TRK","hook_event_name":"UserPromptSubmit","cwd":%s,"prompt":"hi"}}`, first.PID, jsonStr(dir)), nil)
+	post(t, ts.URL, fmt.Sprintf(`{"source":"hook","claude_pid":%d,"payload":{"session_id":"S-Helm","hook_event_name":"UserPromptSubmit","cwd":%s,"prompt":"hi"}}`, first.PID, jsonStr(dir)), nil)
 
 	var view struct {
 		Running   map[string]string `json:"running"`
@@ -148,9 +148,9 @@ func TestTerminalLinksSessionAndGuardsResume(t *testing.T) {
 	}
 	linked := func() bool {
 		getJSON(t, ts.URL+"/v1/sessions", &view)
-		return view.Running["S-TRK"] == first.ID && len(view.Terminals) == 1 && view.Terminals[0].SessionID == "S-TRK"
+		return view.Running["S-Helm"] == first.ID && len(view.Terminals) == 1 && view.Terminals[0].SessionID == "S-Helm"
 	}
-	waitFor(t, linked, "terminal linked to S-TRK") // events are ingested asynchronously
+	waitFor(t, linked, "terminal linked to S-Helm") // events are ingested asynchronously
 	// the name typed for the new agent becomes its card title once the session is linked
 	waitFor(t, func() bool {
 		var v struct {
@@ -158,11 +158,11 @@ func TestTerminalLinksSessionAndGuardsResume(t *testing.T) {
 		}
 		getJSON(t, ts.URL+"/v1/sessions", &v)
 		return len(v.Sessions) == 1 && v.Sessions[0].Title == "Flaky e2e" && v.Sessions[0].Name == "Flaky e2e"
-	}, "S-TRK titled from its terminal")
-	if r := start(`,"resume":"S-TRK"`); r.StatusCode != http.StatusConflict {
+	}, "S-Helm titled from its terminal")
+	if r := start(`,"resume":"S-Helm"`); r.StatusCode != http.StatusConflict {
 		t.Fatalf("resume of a running session = %d, want 409", r.StatusCode)
 	}
-	if r := start(`,"resume":"S-TRK","fork":true`); r.StatusCode != http.StatusCreated {
+	if r := start(`,"resume":"S-Helm","fork":true`); r.StatusCode != http.StatusCreated {
 		t.Fatalf("fork = %d", r.StatusCode)
 	}
 	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/v1/terms/"+first.ID, nil)
@@ -170,7 +170,7 @@ func TestTerminalLinksSessionAndGuardsResume(t *testing.T) {
 		t.Fatalf("stop: %v", err)
 	}
 	// the killed process may linger for a moment
-	waitFor(t, func() bool { return start(`,"resume":"S-TRK"`).StatusCode == http.StatusCreated }, "resume after stop")
+	waitFor(t, func() bool { return start(`,"resume":"S-Helm"`).StatusCode == http.StatusCreated }, "resume after stop")
 }
 
 func waitFor(t *testing.T, ok func() bool, what string) {

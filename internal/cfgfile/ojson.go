@@ -1,5 +1,5 @@
 // Package cfgfile holds what every agent installer shares: order-preserving JSON,
-// backups, atomic writes and TRK's progress block for instruction files.
+// backups, atomic writes and Helm's progress block for instruction files.
 package cfgfile
 
 import (

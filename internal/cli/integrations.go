@@ -1,19 +1,19 @@
 package cli
 
 import (
-	"os"
+	"github.com/GujaLomsadze/helm/internal/config"
 	"strings"
 
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/agent"
 	"io"
 	"os/exec"
 	"runtime"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 const maxStdin = 8 << 20
@@ -26,7 +26,7 @@ func readStdin(r io.Reader) []byte {
 	return b
 }
 
-// hook forwards one hook payload: `trk hook` (Claude Code) or `trk hook --agent codex`.
+// hook forwards one hook payload: `hlm hook` (Claude Code) or `hlm hook --agent codex`.
 func hook(args []string, stdin io.Reader, stdout io.Writer) int {
 	name := agent.Default
 	for i := 0; i < len(args); i++ {
@@ -47,7 +47,7 @@ func hook(args []string, stdin io.Reader, stdout io.Writer) int {
 		fmt.Fprintln(stdout, reply) // before the send: the agent may be waiting on it
 	}
 	e := envelope(model.SourceHook, "", b)
-	e.TerminalID = os.Getenv("TRK_TERMINAL_ID")
+	e.TerminalID = config.Env("TERMINAL_ID")
 	if name != agent.Default {
 		e.Agent = name
 	}
@@ -133,5 +133,5 @@ func compactLine(raw []byte) string {
 	if p.RateLimits != nil {
 		five, seven = p.RateLimits.FiveHour, p.RateLimits.SevenDay
 	}
-	return fmt.Sprintf("trk · ctx %s · 5h %s · 7d %s", pct(ctx), w(five), w(seven))
+	return fmt.Sprintf("hlm · ctx %s · 5h %s · 7d %s", pct(ctx), w(five), w(seven))
 }

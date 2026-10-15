@@ -2,13 +2,13 @@ package codex
 
 import (
 	"errors"
-	"os"
+	"github.com/GujaLomsadze/helm/internal/config"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/agent"
 )
 
 func init() { agent.Register(Adapter{}) }
@@ -26,7 +26,7 @@ func (Adapter) Caps() agent.Caps { return agent.Caps{StopEndsTools: true} }
 func (Adapter) SessionFromEnv(getenv func(string) string) string { return getenv("CODEX_THREAD_ID") }
 
 // Launch: `codex --no-daemon [resume|fork <id>] [-- <prompt>]`. --no-daemon gives each
-// terminal its own Codex process, so stopping it can't touch sessions TRK didn't start.
+// terminal its own Codex process, so stopping it can't touch sessions Helm didn't start.
 func (Adapter) Launch(sp agent.LaunchSpec) (agent.Launch, error) {
 	a := []string{"--no-daemon"}
 	if sp.Resume != "" {
@@ -54,14 +54,14 @@ func (Adapter) PrivateEnv(k string) bool {
 
 func (Adapter) ResumeCommand(native string) string { return "codex resume " + native }
 
-// Executable finds the native codex binary (TRK_CODEX_COMMAND overrides). On Windows npm
-// installs a .cmd shim; TRK resolves the packaged codex.exe behind it rather than run a shell.
+// Executable finds the native codex binary (HLM_CODEX_COMMAND overrides). On Windows npm
+// installs a .cmd shim; Helm resolves the packaged codex.exe behind it rather than run a shell.
 func Executable() (string, error) {
-	if p := os.Getenv("TRK_CODEX_COMMAND"); p != "" {
+	if p := config.Env("CODEX_COMMAND"); p != "" {
 		if found, err := exec.LookPath(p); err == nil {
 			return found, nil
 		}
-		return "", errors.New("TRK_CODEX_COMMAND does not point to an executable")
+		return "", errors.New("HLM_CODEX_COMMAND does not point to an executable")
 	}
 	if runtime.GOOS != "windows" {
 		if p, err := exec.LookPath("codex"); err == nil {
@@ -79,5 +79,5 @@ func Executable() (string, error) {
 			}
 		}
 	}
-	return "", errors.New("codex is not on TRK's PATH; start TRK from a shell where `codex` works (trk stop, then trk open), or set TRK_CODEX_COMMAND")
+	return "", errors.New("codex is not on Helm's PATH; start Helm from a shell where `codex` works (hlm stop, then hlm open), or set HLM_CODEX_COMMAND")
 }

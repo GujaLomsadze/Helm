@@ -1,6 +1,6 @@
-// Package agent is the boundary between TRK's core and the coding agents it watches.
+// Package agent is the boundary between Helm's core and the coding agents it watches.
 // Each agent (Claude Code, Codex, …) is one Adapter in its own package. The core —
-// fleet, derive, store, stats, daemon — reads only TRK's canonical event schema (see
+// fleet, derive, store, stats, daemon — reads only Helm's canonical event schema (see
 // model) and an adapter's Caps; it never compares agent names. Adding an agent means
 // one new package and one line in agent/all.
 package agent
@@ -15,13 +15,13 @@ import (
 )
 
 // Default is the agent an unlabelled hook or terminal belongs to, for compatibility
-// with installs from before TRK knew more than one agent.
+// with installs from before Helm knew more than one agent.
 const Default = "claude"
 
 // Caps are the behaviours the core switches on. They describe how an agent reports,
 // not who it is.
 type Caps struct {
-	// PIDAttribution: one OS process per session, so TRK learns pid → session from hooks
+	// PIDAttribution: one OS process per session, so Helm learns pid → session from hooks
 	// and can tell whether a session is still running (Claude Code).
 	PIDAttribution bool
 	// CwdBestMatch: progress reports with no session id go to the best match in the
@@ -33,7 +33,7 @@ type Caps struct {
 	Counters bool
 }
 
-// Normalized is one hook delivery in TRK's canonical schema.
+// Normalized is one hook delivery in Helm's canonical schema.
 type Normalized struct {
 	Payload    json.RawMessage
 	Kind       string // model.Kind*
@@ -56,9 +56,9 @@ type LaunchSpec struct {
 	Fork   bool
 }
 
-// InstallOptions are the choices `trk init --agent X` passes on.
+// InstallOptions are the choices `hlm init --agent X` passes on.
 type InstallOptions struct {
-	TrkCmd           string // how hooks should call trk: absolute, quoted when needed
+	HlmCmd           string // how hooks should call hlm: absolute, quoted when needed
 	DryRun           bool
 	Instructions     string // instruction file to add the progress block to ("" = the agent's default)
 	SkipInstructions bool
@@ -67,7 +67,7 @@ type InstallOptions struct {
 	Now              time.Time
 }
 
-// InstallStep is one line of `trk init` output.
+// InstallStep is one line of `hlm init` output.
 type InstallStep struct {
 	Label  string // "Hooks", "Status line", "CLAUDE.md"
 	State  string // StepAdded, StepPresent, …
@@ -103,17 +103,17 @@ type Adapter interface {
 	Caps() Caps
 	// Normalize turns a raw hook payload into canonical form. ok=false drops it.
 	Normalize(raw json.RawMessage) (n Normalized, ok bool)
-	// HookReply is what `trk hook --agent X` prints for this payload ("" = nothing).
+	// HookReply is what `hlm hook --agent X` prints for this payload ("" = nothing).
 	HookReply(raw json.RawMessage) string
-	// SessionFromEnv finds the session a `trk step` call runs in, from the agent's
+	// SessionFromEnv finds the session a `hlm step` call runs in, from the agent's
 	// environment variables. "" when the agent doesn't provide one.
 	SessionFromEnv(getenv func(string) string) string
 	// Launch builds the argv for a dashboard terminal.
 	Launch(sp LaunchSpec) (Launch, error)
 	// PrivateEnv reports whether an inherited variable belongs to an agent session and
-	// must not leak into a terminal TRK starts (it would join that session).
+	// must not leak into a terminal Helm starts (it would join that session).
 	PrivateEnv(key string) bool
-	// ResumeCommand is the shell command that continues a session outside TRK.
+	// ResumeCommand is the shell command that continues a session outside Helm.
 	ResumeCommand(native string) string
 	Install(o InstallOptions) (InstallResult, error)
 }
@@ -176,7 +176,7 @@ func CapsOf(name string) Caps {
 	return Caps{}
 }
 
-// SessionKey is TRK's session id for an agent's native one. The default agent keeps
+// SessionKey is Helm's session id for an agent's native one. The default agent keeps
 // its ids unchanged (they predate this scheme); the others are "<agent>:<native>", so
 // two agents can never share a key.
 func SessionKey(agentName, native string) string {

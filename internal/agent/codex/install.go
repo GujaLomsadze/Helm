@@ -13,12 +13,12 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	"github.com/GujaLomsadze/trk/internal/cfgfile"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/cfgfile"
 )
 
-// Paths are the files `trk init --agent codex` edits. config.toml and hook trust are
-// never touched: the user reviews TRK's hooks in Codex's /hooks screen.
+// Paths are the files `hlm init --agent codex` edits. config.toml and hook trust are
+// never touched: the user reviews Helm's hooks in Codex's /hooks screen.
 type Paths struct{ Hooks, AgentsMD string }
 
 func DefaultPaths() (Paths, error) {
@@ -44,7 +44,7 @@ func (Adapter) Install(o agent.InstallOptions) (agent.InstallResult, error) {
 	if o.SkipInstructions {
 		paths.AgentsMD = ""
 	}
-	cmd, err := hookCommand(o.TrkCmd)
+	cmd, err := hookCommand(o.HlmCmd)
 	if err != nil {
 		return agent.InstallResult{}, err
 	}
@@ -108,12 +108,13 @@ func install(paths Paths, cmd string, o agent.InstallOptions) (agent.InstallResu
 		}
 		res.Steps = append(res.Steps, st)
 	}
-	res.Next = []string{"Restart Codex, then review and trust the TRK hooks in /hooks"}
+	res.Next = []string{"Restart Codex, then review and trust the Helm hooks in /hooks"}
 	return res, nil
 }
 
-// ownHook matches TRK's Codex hook, current and from the first Codex release (codex-hook).
-var ownHook = regexp.MustCompile(`(?:^|[\s/\\"'])trk(?:\.exe)?["']?\s+(?:hook\s+--agent[ =]codex|codex-hook)\s*$`)
+// ownHook matches Helm's Codex hook, current and from the first Codex release (codex-hook).
+// TRK (Helm's old name) and its first Codex release (codex-hook) count as ours too: init rewrites them.
+var ownHook = regexp.MustCompile(`(?:^|[\s/\\"'])(?:hlm|trk)(?:\.exe)?["']?\s+(?:hook\s+--agent[ =]codex|codex-hook)\s*$`)
 
 func mergeHooks(root *cfgfile.Object, cmd string) (bool, error) {
 	v, exists := root.Get("hooks")
@@ -187,7 +188,7 @@ func mergeHooks(root *cfgfile.Object, cmd string) (bool, error) {
 	return changed, nil
 }
 
-// handler: async so Codex never waits on TRK, except SessionEnd, which Codex runs synchronously.
+// handler: async so Codex never waits on Helm, except SessionEnd, which Codex runs synchronously.
 func handler(event, cmd string) map[string]any {
 	return map[string]any{"type": "command", "command": cmd, "async": event != "SessionEnd", "timeout": json.Number("3")}
 }
@@ -196,9 +197,9 @@ func handler(event, cmd string) map[string]any {
 // invocation forwards JSON stdin as UTF-8 and quotes the executable without expansion.
 const psPrefix = "powershell.exe -NoProfile -NonInteractive -EncodedCommand "
 
-func hookCommand(trkCmd string) (string, error) {
+func hookCommand(hlmCmd string) (string, error) {
 	if runtime.GOOS != "windows" {
-		return trkCmd + " hook --agent codex", nil
+		return hlmCmd + " hook --agent codex", nil
 	}
 	exe, err := os.Executable()
 	if err != nil {

@@ -7,7 +7,7 @@ import (
 
 func TestHookForCodex(t *testing.T) {
 	got := capture(t)
-	t.Setenv("TRK_TERMINAL_ID", "term-1")
+	t.Setenv("HLM_TERMINAL_ID", "term-1")
 	code, out := runIn(`{"session_id":"native","hook_event_name":"PreToolUse"}`, "hook", "--agent", "codex")
 	e := (*got)[0]
 	if code != 0 || out != "" || len(*got) != 1 || e.Agent != "codex" || e.ClaudePID != 0 || e.TerminalID != "term-1" {
@@ -31,19 +31,19 @@ func TestHookForCodex(t *testing.T) {
 func TestStepFindsCodexThread(t *testing.T) {
 	got := capture(t)
 	t.Setenv("CODEX_THREAD_ID", "thread-9")
-	t.Setenv("TRK_SESSION", "")
+	t.Setenv("HLM_SESSION", "")
 	findClaude = func() int { return 0 }
 	run("step", "testing")
 	if e := (*got)[0]; e.SessionID != "codex:thread-9" || e.SessionVia != "" {
 		t.Fatalf("%+v", e)
 	}
-	// TRK_SESSION still wins, and a Claude ancestor wins over an inherited Codex variable.
-	t.Setenv("TRK_SESSION", "mine")
+	// HLM_SESSION still wins, and a Claude ancestor wins over an inherited Codex variable.
+	t.Setenv("HLM_SESSION", "mine")
 	run("step", "x")
 	if e := (*got)[1]; e.SessionID != "mine" {
 		t.Fatalf("%+v", e)
 	}
-	t.Setenv("TRK_SESSION", "")
+	t.Setenv("HLM_SESSION", "")
 	findClaude = func() int { return 77 }
 	run("step", "x")
 	if e := (*got)[2]; e.SessionID != "" || e.ClaudePID != 77 {

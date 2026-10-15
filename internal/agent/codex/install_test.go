@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/agent"
 )
 
 func paths(t *testing.T) Paths {
@@ -20,7 +20,7 @@ func TestInstallDryRunPreservesAndIsIdempotent(t *testing.T) {
 	original := `{"description":"mine","hooks":{"Stop":[{"hooks":[{"type":"command","command":"other-tool"}]}]}}`
 	os.WriteFile(p.Hooks, []byte(original), 0o600)
 	os.WriteFile(p.AgentsMD, []byte("# My instructions\n"), 0o600)
-	cmd := `"/opt/my tools/trk" hook --agent codex`
+	cmd := `"/opt/my tools/hlm" hook --agent codex`
 	o := agent.InstallOptions{DryRun: true, Now: time.Now()}
 	res, err := install(p, cmd, o)
 	if err != nil || !res.Changed() || len(res.Steps) != 2 {
@@ -43,7 +43,7 @@ func TestInstallDryRunPreservesAndIsIdempotent(t *testing.T) {
 		}
 	}
 	md, _ := os.ReadFile(p.AgentsMD)
-	if !strings.HasPrefix(string(md), "# My instructions") || !strings.Contains(string(md), `trk step "`) {
+	if !strings.HasPrefix(string(md), "# My instructions") || !strings.Contains(string(md), `hlm step "`) {
 		t.Fatal(string(md))
 	}
 	if res, err = install(p, cmd, o); err != nil || res.Changed() {
@@ -53,21 +53,21 @@ func TestInstallDryRunPreservesAndIsIdempotent(t *testing.T) {
 
 func TestInstallUpdatesFirstReleaseHook(t *testing.T) {
 	p := paths(t)
-	os.WriteFile(p.Hooks, []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/old/trk codex-hook","async":true,"timeout":3}]}]}}`), 0o600)
-	if _, err := install(Paths{Hooks: p.Hooks}, "/new/trk hook --agent codex", agent.InstallOptions{Now: time.Now()}); err != nil {
+	os.WriteFile(p.Hooks, []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/old/hlm codex-hook","async":true,"timeout":3}]}]}}`), 0o600)
+	if _, err := install(Paths{Hooks: p.Hooks}, "/new/hlm hook --agent codex", agent.InstallOptions{Now: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(p.Hooks)
-	if strings.Contains(string(b), "codex-hook") || strings.Count(string(b), "/new/trk hook --agent codex") != len(Events) {
+	if strings.Contains(string(b), "codex-hook") || strings.Count(string(b), "/new/hlm hook --agent codex") != len(Events) {
 		t.Fatal(string(b))
 	}
 }
 
 func TestInvalidInputsWriteNothing(t *testing.T) {
-	for _, raw := range []string{`{`, `{"hooks":[]}`, `{"hooks":{"Stop":{}}}`, `{"hooks":{"Stop":[{"hooks":[null]}]}}`, `{"hooks":{"Stop":[{"matcher":[],"hooks":[{"command":"trk hook --agent codex"}]}]}}`} {
+	for _, raw := range []string{`{`, `{"hooks":[]}`, `{"hooks":{"Stop":{}}}`, `{"hooks":{"Stop":[{"hooks":[null]}]}}`, `{"hooks":{"Stop":[{"matcher":[],"hooks":[{"command":"hlm hook --agent codex"}]}]}}`} {
 		p := paths(t)
 		os.WriteFile(p.Hooks, []byte(raw), 0o600)
-		if _, err := install(p, "trk hook --agent codex", agent.InstallOptions{Now: time.Now()}); err == nil {
+		if _, err := install(p, "hlm hook --agent codex", agent.InstallOptions{Now: time.Now()}); err == nil {
 			t.Errorf("accepted %s", raw)
 		}
 		if b, _ := os.ReadFile(p.Hooks); string(b) != raw {
@@ -81,8 +81,8 @@ func TestInvalidInputsWriteNothing(t *testing.T) {
 
 func TestOwnCommand(t *testing.T) {
 	for cmd, want := range map[string]bool{
-		"/usr/local/bin/trk hook --agent codex": true, `"C:/Program Files/trk.exe" hook --agent codex`: true,
-		"trk codex-hook": true, "trk hook": false, "mytrk hook --agent codex": false, "other-tool": false,
+		"/usr/local/bin/hlm hook --agent codex": true, `"C:/Program Files/hlm.exe" hook --agent codex`: true,
+		"trk codex-hook": true, "/old/trk hook --agent codex": true, "hlm hook": false, "mytrk hook --agent codex": false, "other-tool": false,
 	} {
 		if isOwnCommand(cmd) != want {
 			t.Errorf("%q", cmd)

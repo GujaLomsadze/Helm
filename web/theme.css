@@ -315,7 +315,7 @@ body.no-limits .limits { display: none; }
 .card[data-open] { cursor: pointer; transition: border-color 0.15s; }
 .card[data-open]:hover { border-color: var(--accent); }
 .card[data-open]:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
-.in-trk { color: var(--ok); }
+.in-hlm { color: var(--ok); }
 dialog.agents { margin: 0 0 0 auto; height: 100%; max-height: 100%; width: var(--ag-w, min(760px, 100vw)); max-width: 100vw; padding: 0;
   color: var(--text); border-width: 0 0 0 1px; display: none; flex-direction: column; position: fixed; overflow: visible; }
 dialog.agents[open] { display: flex; }
@@ -377,7 +377,7 @@ dialog.agents.resizing .ag-term { pointer-events: none; }
 .ag-err:empty { display: none; }
 .ag-note { margin: auto; display: grid; gap: 12px; justify-items: center; color: var(--muted); text-align: center; }
 .ag-note b { font: 26px/1 var(--font-deco); color: var(--text); text-transform: uppercase; }
-/* a session that isn't running in TRK */
+/* a session that isn't running in Helm */
 .ag-ext { display: grid; gap: 12px; max-width: 760px; }
 .ag-intro { margin: 0; color: var(--muted); font-size: 13px; }
 .ag-where { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; font-size: 12px; padding: 10px 12px; border: 1px dashed var(--border); margin: 0; }

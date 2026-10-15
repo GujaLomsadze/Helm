@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 func TestUpgradeTagsClaudeHistory(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "trk.db")
+	p := filepath.Join(t.TempDir(), "hlm.db")
 	db, err := sql.Open("sqlite", p)
 	if err != nil {
 		t.Fatal(err)

@@ -1,5 +1,5 @@
 // Package client sends events to the daemon. It never returns errors to callers:
-// TRK must not break an agent.
+// Helm must not break an agent.
 package client
 
 import (
@@ -14,8 +14,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/config"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/config"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 const Timeout = 200 * time.Millisecond
@@ -24,7 +24,7 @@ type Client struct {
 	BaseURL     string
 	HTTP        *http.Client
 	AllowSpawn  bool
-	Paused      bool // `trk stop` was run: send nothing, spawn nothing
+	Paused      bool // `hlm stop` was run: send nothing, spawn nothing
 	Spawn       func() error
 	SpawnBudget time.Duration
 }
@@ -33,7 +33,7 @@ func Default() *Client {
 	return &Client{
 		BaseURL:     config.BaseURL(),
 		HTTP:        &http.Client{Timeout: Timeout},
-		AllowSpawn:  config.IsLocalDefault() && os.Getenv("TRK_NO_SPAWN") == "",
+		AllowSpawn:  config.IsLocalDefault() && config.Env("NO_SPAWN") == "",
 		Paused:      config.IsLocalDefault() && config.Paused(),
 		Spawn:       SpawnDaemon,
 		SpawnBudget: time.Second,
@@ -97,13 +97,13 @@ func (c *Client) DaemonVersion() string {
 		App     string `json:"app"`
 		Version string `json:"version"`
 	}
-	if json.NewDecoder(resp.Body).Decode(&h) != nil || h.App != "trk" {
+	if json.NewDecoder(resp.Body).Decode(&h) != nil || (h.App != "hlm" && h.App != "trk") { // trk: a daemon from before the rename
 		return ""
 	}
 	return h.Version
 }
 
-// Shutdown asks the daemon to exit (the next trk call starts a fresh one).
+// Shutdown asks the daemon to exit (the next hlm call starts a fresh one).
 func (c *Client) Shutdown() bool {
 	resp, err := c.HTTP.Post(c.BaseURL+"/v1/shutdown", "application/json", nil)
 	if err != nil {

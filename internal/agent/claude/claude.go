@@ -1,4 +1,4 @@
-// Package claude is the Claude Code adapter. Claude's hook payloads are the model TRK's
+// Package claude is the Claude Code adapter. Claude's hook payloads are the model Helm's
 // canonical schema grew from, so normalizing them only maps the event name to a kind.
 package claude
 
@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	"github.com/GujaLomsadze/trk/internal/claudecfg"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/claudecfg"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 func init() { agent.Register(Adapter{}) }
@@ -92,10 +92,10 @@ func (Adapter) Install(o agent.InstallOptions) (agent.InstallResult, error) {
 	var chain func(string) bool
 	if o.Confirm != nil {
 		chain = func(existing string) bool {
-			return o.Confirm("You already have a status line: " + existing + "\n    Chain it through trk? It keeps showing exactly as before.")
+			return o.Confirm("You already have a status line: " + existing + "\n    Chain it through hlm? It keeps showing exactly as before.")
 		}
 	}
-	r, err := claudecfg.Init(claudecfg.InitOptions{Paths: paths, TrkCmd: o.TrkCmd, ChainStatus: chain,
+	r, err := claudecfg.Init(claudecfg.InitOptions{Paths: paths, HlmCmd: o.HlmCmd, ChainStatus: chain,
 		SkipStatusLine: o.SkipStatusLine, SkipClaudeMD: o.SkipInstructions, DryRun: o.DryRun, Now: o.Now})
 	if err != nil {
 		return agent.InstallResult{}, err
@@ -111,11 +111,11 @@ func (Adapter) Install(o agent.InstallOptions) (agent.InstallResult, error) {
 	step("Hooks", r.HooksChanged, paths.Settings, r.SettingsBackup)
 	switch r.Status {
 	case claudecfg.StatusAdded:
-		res.Steps = append(res.Steps, agent.InstallStep{Label: "Status line", State: agent.StepAdded, Detail: "set to trk", Backup: r.SettingsBackup})
+		res.Steps = append(res.Steps, agent.InstallStep{Label: "Status line", State: agent.StepAdded, Detail: "set to hlm", Backup: r.SettingsBackup})
 	case claudecfg.StatusChained:
 		res.Steps = append(res.Steps, agent.InstallStep{Label: "Status line", State: agent.StepAdded, Detail: "chained — " + r.ExistingStatus + " still shows, unchanged", Backup: r.SettingsBackup})
 	case claudecfg.StatusPresent:
-		res.Steps = append(res.Steps, agent.InstallStep{Label: "Status line", State: agent.StepPresent, Detail: "already goes through trk"})
+		res.Steps = append(res.Steps, agent.InstallStep{Label: "Status line", State: agent.StepPresent, Detail: "already goes through hlm"})
 	case claudecfg.StatusKept:
 		res.Steps = append(res.Steps, agent.InstallStep{Label: "Status line", State: agent.StepKept, Detail: "kept " + r.ExistingStatus + " — re-run with --yes to chain it"})
 	}

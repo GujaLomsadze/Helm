@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
-# Seed a running daemon with a believable fleet. Usage: TRK_PORT=17777 sh scripts/seed-demo.sh
+# Seed a running daemon with a believable fleet. Usage: HLM_PORT=17777 sh scripts/seed-demo.sh
 set -eu
-U="http://127.0.0.1:${TRK_PORT:-7777}/v1/events"
+U="http://127.0.0.1:${HLM_PORT:-7777}/v1/events"
 p() { curl -fsS -o /dev/null -H 'Content-Type: application/json' -d "$1" "$U"; }
 hook() { p "{\"source\":\"hook\",\"payload\":{\"session_id\":\"$1\",\"cwd\":\"$2\",\"hook_event_name\":\"$3\"$4}}"; }
 cli() { p "{\"source\":\"cli\",\"kind\":\"$2\",\"session_id\":\"$1\",\"session_via\":\"env\",\"payload\":$3}"; }

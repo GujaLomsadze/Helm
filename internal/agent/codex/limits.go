@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/agent"
 	"io"
 	"os/exec"
 	"sort"
@@ -92,7 +92,7 @@ func ReadLimits(ctx context.Context) ([]LimitBucket, error) {
 	quietProcess(cmd)
 	buckets, err := readLimitsProcess(cmd)
 	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return nil, errors.New("Codex usage refresh timed out; TRK will retry automatically")
+		return nil, errors.New("Codex usage refresh timed out; Helm will retry automatically")
 	}
 	return buckets, err
 }
@@ -116,7 +116,7 @@ func readLimitsProcess(cmd *exec.Cmd) ([]LimitBucket, error) {
 	}
 	defer func() { stdin.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	send := json.NewEncoder(stdin)
-	if err := send.Encode(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{"clientInfo": map[string]string{"name": "trk", "title": "TRK limits", "version": "1"}}}); err != nil {
+	if err := send.Encode(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{"clientInfo": map[string]string{"name": "hlm", "title": "Helm limits", "version": "1"}}}); err != nil {
 		return nil, errors.New("Could not initialize Codex")
 	}
 	scanner := bufio.NewScanner(io.LimitReader(stdout, 4<<20))
@@ -150,7 +150,7 @@ func readLimitsProcess(cmd *exec.Cmd) ([]LimitBucket, error) {
 			return decodeLimits(msg.Result)
 		}
 	}
-	return nil, errors.New("Codex App Server closed before returning usage; TRK will retry automatically")
+	return nil, errors.New("Codex App Server closed before returning usage; Helm will retry automatically")
 }
 
 func decodeLimits(raw json.RawMessage) ([]LimitBucket, error) {

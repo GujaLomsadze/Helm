@@ -16,14 +16,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/fleet"
-	"github.com/GujaLomsadze/trk/internal/gitinfo"
-	"github.com/GujaLomsadze/trk/internal/store"
+	"github.com/GujaLomsadze/helm/internal/fleet"
+	"github.com/GujaLomsadze/helm/internal/gitinfo"
+	"github.com/GujaLomsadze/helm/internal/store"
 )
 
 func newTestServer(t *testing.T) (*httptest.Server, *Server) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "trk.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "hlm.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,12 +121,12 @@ func TestHealthzAndIndex(t *testing.T) {
 	ts, _ := newTestServer(t)
 	var h map[string]any
 	getJSON(t, ts.URL+"/healthz", &h)
-	if h["app"] != "trk" || h["ok"] != true {
+	if h["app"] != "hlm" || h["ok"] != true {
 		t.Fatalf("healthz = %v", h)
 	}
 	resp, _ := http.Get(ts.URL + "/")
 	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 || !strings.Contains(string(b), "TRK.EXE") {
+	if resp.StatusCode != 200 || !strings.Contains(string(b), "HELM.EXE") {
 		t.Fatalf("index = %d %q", resp.StatusCode, b)
 	}
 }

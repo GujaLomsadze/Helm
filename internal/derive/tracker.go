@@ -1,4 +1,4 @@
-// Package derive holds TRK's pure heuristics: status, loops, collisions, context advice.
+// Package derive holds Helm's pure heuristics: status, loops, collisions, context advice.
 package derive
 
 import "sort"
@@ -54,7 +54,7 @@ type Span struct {
 // Hooks run async, so events can arrive out of order: every mutation compares timestamps.
 type Tracker struct {
 	ProgressAt   int64 // last start/step/progress
-	Blocked      *Need // declared via trk blocked
+	Blocked      *Need // declared via hlm blocked
 	Pending      *Need // permission prompt / question awaiting the human
 	LastClear    int64 // latest event that resolves Pending
 	DoneAt       int64 // done/stop/session_end

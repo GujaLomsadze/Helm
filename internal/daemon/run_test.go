@@ -36,7 +36,7 @@ func TestRunSingleInstanceAndPidFile(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("daemon did not start")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "trk.pid")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "hlm.pid")); err != nil {
 		t.Fatalf("pid file: %v", err)
 	}
 	err := Run(context.Background(), Options{Addr: addr, DataDir: t.TempDir(), Logger: log.New(io.Discard, "", 0)})
@@ -52,7 +52,7 @@ func TestRunSingleInstanceAndPidFile(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("shutdown hung")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "trk.pid")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "hlm.pid")); !os.IsNotExist(err) {
 		t.Fatal("pid file not removed")
 	}
 }

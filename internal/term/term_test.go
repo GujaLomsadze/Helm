@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	_ "github.com/GujaLomsadze/trk/internal/agent/all"
-	"github.com/GujaLomsadze/trk/internal/agent/claude"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	_ "github.com/GujaLomsadze/helm/internal/agent/all"
+	"github.com/GujaLomsadze/helm/internal/agent/claude"
 )
 
 // args is the argv the default agent's adapter builds for a spec.
@@ -168,7 +168,7 @@ func TestStartLimitAndMissingCommand(t *testing.T) {
 	if _, err := m.Start(Spec{Dir: dir}); err == nil || !strings.Contains(err.Error(), "already running") {
 		t.Fatalf("over the limit: %v", err)
 	}
-	m2 := newTestManager("trk-no-such-command-xyz")
+	m2 := newTestManager("hlm-no-such-command-xyz")
 	if _, err := m2.Start(Spec{Dir: dir}); err == nil || !strings.Contains(err.Error(), "PATH") {
 		t.Fatalf("missing command: %v", err)
 	}
@@ -181,17 +181,17 @@ func TestCleanEnvDropsParentClaudeSession(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "parent")
 	t.Setenv("CLAUDECODE", "1")
 	t.Setenv("CLAUDE_PID", "42")
-	t.Setenv("TRK_KEEP_ME", "yes")
+	t.Setenv("HLM_KEEP_ME", "yes")
 	t.Setenv("CODEX_THREAD_ID", "thread")
-	t.Setenv("TRK_SESSION", "outer")
-	t.Setenv("TRK_TERMINAL_ID", "outer-term")
+	t.Setenv("HLM_SESSION", "outer")
+	t.Setenv("HLM_TERMINAL_ID", "outer-term")
 	env := CleanEnv()
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "CLAUDE") || strings.HasPrefix(kv, "CODEX_THREAD") || strings.HasPrefix(kv, "TRK_SESSION") || strings.HasPrefix(kv, "TRK_TERMINAL") {
+		if strings.HasPrefix(kv, "CLAUDE") || strings.HasPrefix(kv, "CODEX_THREAD") || strings.HasPrefix(kv, "HLM_SESSION") || strings.HasPrefix(kv, "HLM_TERMINAL") {
 			t.Errorf("leaked %s", kv)
 		}
 	}
-	if !slices.Contains(env, "TRK_KEEP_ME=yes") || !slices.Contains(env, "PATH="+os.Getenv("PATH")) {
+	if !slices.Contains(env, "HLM_KEEP_ME=yes") || !slices.Contains(env, "PATH="+os.Getenv("PATH")) {
 		t.Error("dropped unrelated variables")
 	}
 }

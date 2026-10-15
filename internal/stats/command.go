@@ -11,8 +11,8 @@ var setup = map[string]bool{
 	"echo": true, "printf": true, "true": true, "sleep": true, "mkdir": true, "clear": true,
 }
 
-// trk's progress verbs, chained in front of real commands ("trk step x; go test")
-var trkProgress = map[string]bool{"start": true, "step": true, "progress": true, "done": true, "blocked": true}
+// hlm's progress verbs, chained in front of real commands ("hlm step x; go test")
+var hlmProgress = map[string]bool{"start": true, "step": true, "progress": true, "done": true, "blocked": true}
 
 // wrappers run the next word as the command
 var wrappers = map[string]bool{"sudo": true, "env": true, "time": true, "nohup": true, "exec": true, "command": true, "builtin": true}
@@ -26,7 +26,7 @@ var withSub = map[string]bool{
 
 // CommandKey names a Bash command by the program that does the work, so runs group together:
 // "cd /repo && export X=1; make check 2>&1 | tail" → "make check". Setup steps (cd, export,
-// trk progress calls, VAR=value) are skipped; pipes keep only their first stage.
+// hlm progress calls, VAR=value) are skipped; pipes keep only their first stage.
 func CommandKey(cmd string) string {
 	first := ""
 	for _, seg := range splitCommands(cmd) {
@@ -49,7 +49,7 @@ func CommandKey(cmd string) string {
 		if first == "" {
 			first = prog
 		}
-		if setup[prog] || prog == "trk" && len(w) > 1 && trkProgress[w[1]] {
+		if setup[prog] || prog == "hlm" && len(w) > 1 && hlmProgress[w[1]] {
 			continue
 		}
 		if withSub[prog] {

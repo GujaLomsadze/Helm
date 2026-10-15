@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	"github.com/GujaLomsadze/trk/internal/agent/claude"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/agent/claude"
 )
 
 // limitsAgent is a test adapter that can read plan usage.

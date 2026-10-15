@@ -3,7 +3,7 @@
 :root {
   /* repos: categorical, validated on the panel colour (CVD ΔE ≥ 9.4, normal ≥ 20.9, all ≥ 3:1); 4th+ fold into Other */
   --r1: #3987e5; --r2: #d95926; --r3: #199e70; --r-other: #7A5650;
-  /* time split, in TRK's own meanings: ice white = model working, amber = waiting on you */
+  /* time split, in Helm's own meanings: ice white = model working, amber = waiting on you */
   --t-model: #F1DCD6; --t-tools: #6b4a44; --t-wait: #FFB27A;
 }
 body { padding-bottom: 32px; }

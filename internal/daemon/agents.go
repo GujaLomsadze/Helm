@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	"github.com/GujaLomsadze/trk/web"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	"github.com/GujaLomsadze/helm/web"
 )
 
 // agentsSeenWindow: an agent counts as "in use" (and gets its UI) after a session in this long.
@@ -19,7 +19,7 @@ type agentInfo struct {
 	Name      string `json:"name"`
 	Label     string `json:"label"`
 	Seen      bool   `json:"seen"`      // had a session recently: the dashboard shows its controls
-	Available bool   `json:"available"` // its CLI is on TRK's PATH: "+ Agent" can start it
+	Available bool   `json:"available"` // its CLI is on Helm's PATH: "+ Agent" can start it
 	Limits    bool   `json:"limits"`    // /v1/agents/{name}/limits can read its plan usage
 	Counters  bool   `json:"counters"`  // reports cost and tokens
 	Resume    string `json:"resume"`    // resume command, with {id} for the native session id

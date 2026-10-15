@@ -4,22 +4,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/store"
+	"github.com/GujaLomsadze/helm/internal/store"
 )
 
 func TestCommandKey(t *testing.T) {
 	cases := map[string]string{
 		`make check`: "make check",
-		`cd /mnt/d/REPOS/TRK; export PATH="$HOME/.local/go/bin:$PATH"; make check 2>&1 | tail -3`: "make check",
-		`trk step "Writing tests"; go test ./...`:                                                 "go test",
-		`S=/tmp/x; cd $S && node walk.js`:                                                         "node",
-		`git push origin main 2>&1 | tail -1 && git tag v1`:                                       "git push",
-		`gh run watch 123 -R GujaLomsadze/TRK --exit-status`:                                      "gh run",
-		`go test -race -count=1 ./internal/...`:                                                   "go test",
-		`sudo FOO=1 /usr/bin/python3 -c "print('a; b')"`:                                          "python3",
-		`curl -s localhost:7777/healthz`:                                                          "curl",
-		`(TRK_PORT=1 nohup ./trk serve > log 2>&1 &); sleep 1; curl x`:                            "trk",
-		`R=$(gh run list --limit 1); gh run watch $R`:                                             "gh run",
+		`cd /mnt/d/REPOS/Helm; export PATH="$HOME/.local/go/bin:$PATH"; make check 2>&1 | tail -3`: "make check",
+		`hlm step "Writing tests"; go test ./...`:                                                  "go test",
+		`S=/tmp/x; cd $S && node walk.js`:                                                          "node",
+		`git push origin main 2>&1 | tail -1 && git tag v1`:                                        "git push",
+		`gh run watch 123 -R GujaLomsadze/helm --exit-status`:                                      "gh run",
+		`go test -race -count=1 ./internal/...`:                                                    "go test",
+		`sudo FOO=1 /usr/bin/python3 -c "print('a; b')"`:                                           "python3",
+		`curl -s localhost:7777/healthz`:                                                           "curl",
+		`(HLM_PORT=1 nohup ./hlm serve > log 2>&1 &); sleep 1; curl x`:                             "hlm",
+		`R=$(gh run list --limit 1); gh run watch $R`:                                              "gh run",
 		`cd /tmp`: "cd",
 		``:        "(empty)",
 	}
@@ -55,14 +55,14 @@ func TestCompute(t *testing.T) {
 		ev("B", at(1, 22, 1), "tool_pre", "Read", "t4", "", "/b/web/app.js"),
 		ev("B", at(1, 22, 1), "tool_post", "Read", "t4", "", ""),
 	}
-	meta := map[string]Meta{"A": {Name: "A", Repo: "TRK", Model: "Opus 5.5", Cwd: "/r"}, "B": {Name: "B", Repo: "", Cwd: "/b", Model: "Sonnet 5.5"}}
+	meta := map[string]Meta{"A": {Name: "A", Repo: "Helm", Model: "Opus 5.5", Cwd: "/r"}, "B": {Name: "B", Repo: "", Cwd: "/b", Model: "Sonnet 5.5"}}
 	in := Input{Rows: rows, Prior: map[string]store.StatRow{"A": st("A", at(-2, 0, 0), 1, 0, 0, 0)}, Meta: meta,
 		PrevSince: day0 - 2*day, Since: day0, Until: day0 + 2*day, Days: 2, TZOffsetMin: -120}
 	r := Compute(in)
 	if r.KPI.SpendPrev != 3 || r.KPI.Spend != 1+2+7 {
 		t.Fatalf("spend %v prev %v", r.KPI.Spend, r.KPI.SpendPrev)
 	}
-	if r.Days[0].Spend["TRK"] != 1 || r.Days[1].Spend["TRK"] != 2 || r.Days[1].Spend["b"] != 7 {
+	if r.Days[0].Spend["Helm"] != 1 || r.Days[1].Spend["Helm"] != 2 || r.Days[1].Spend["b"] != 7 {
 		t.Fatalf("days %+v", r.Days)
 	}
 	if len(r.Repos) != 2 || r.Repos[0].Repo != "b" {
@@ -90,8 +90,8 @@ func TestCompute(t *testing.T) {
 	if r.KPI.ByModel["Opus"] != 150 || r.KPI.PeakAgents != 1 {
 		t.Fatalf("kpi %+v", r.KPI)
 	}
-	// repo filter: only TRK
-	in.Repos = map[string]bool{"TRK": true}
+	// repo filter: only Helm
+	in.Repos = map[string]bool{"Helm": true}
 	f := Compute(in)
 	if f.KPI.Spend != 3 || len(f.Sessions) != 1 || len(f.Repos) != 2 {
 		t.Fatalf("filtered: spend %v sessions %d repos %d", f.KPI.Spend, len(f.Sessions), len(f.Repos))

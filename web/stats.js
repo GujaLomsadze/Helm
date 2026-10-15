@@ -1,5 +1,5 @@
 "use strict";
-// TRK Stats page: history from /v1/stats (spend, time split, waits, activity, tools, commands,
+// Helm Stats page: history from /v1/stats (spend, time split, waits, activity, tools, commands,
 // files, context, sessions). Builds DOM with createElement/textContent only, like app.js:
 // session names, commands and file paths come from agents and are untrusted.
 
@@ -55,7 +55,7 @@ function hover(el, rows) { el.addEventListener("mousemove", (e) => showTip(e, ro
 const trow = (sw, label, val) => h("div", { class: "tr" }, h("span", null, sw ? h("i", { class: "st-sw", style: "background:" + sw + ";margin-right:6px" }) : null, label), h("span", null, val));
 
 // ---------- state ----------
-const PREF_KEY = "trk.stats.v1";
+const PREF_KEY = "hlm.stats.v1";
 const pref = (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY) || "{}"); } catch { return {}; } })();
 let days = [1, 7, 30].includes(pref.days) ? pref.days : 7;
 let res = null;
@@ -72,7 +72,7 @@ function buildPalette(repos) {
 const groupOf = (repo) => palette.find((g) => g.members.includes(repo));
 
 // Agent filter: shared with Fleet, shown once a second agent is in use.
-const kit = window.TRKAgentKit;
+const kit = window.HelmAgentKit;
 let multi = false;
 function drawAgentFilter() {
   $("agent-filter").hidden = $("agent-lab").hidden = !multi;
@@ -97,7 +97,7 @@ async function load() {
     $("state").classList.add("live");
     render();
   } catch {
-    $("state").textContent = "○ can't reach TRK";
+    $("state").textContent = "○ can't reach Helm";
     $("state").classList.remove("live");
   }
 }

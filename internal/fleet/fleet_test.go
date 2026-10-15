@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/derive"
-	"github.com/GujaLomsadze/trk/internal/gitinfo"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/derive"
+	"github.com/GujaLomsadze/helm/internal/gitinfo"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 const sec = int64(1000)

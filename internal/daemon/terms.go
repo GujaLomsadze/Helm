@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	"github.com/GujaLomsadze/trk/internal/derive"
-	"github.com/GujaLomsadze/trk/internal/fleet"
-	"github.com/GujaLomsadze/trk/internal/ptree"
-	"github.com/GujaLomsadze/trk/internal/term"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/derive"
+	"github.com/GujaLomsadze/helm/internal/fleet"
+	"github.com/GujaLomsadze/helm/internal/ptree"
+	"github.com/GujaLomsadze/helm/internal/term"
 	"github.com/gorilla/websocket"
 )
 
@@ -27,8 +27,8 @@ type dashView struct {
 	TerminalsEnabled   bool        `json:"terminals_enabled"`
 	TerminalsSupported bool        `json:"terminals_supported"`
 	Terminals          []term.Info `json:"terminals"`
-	// Running holds every session known to be alive, mapped to the TRK terminal it runs
-	// in, or "" when it runs somewhere else (a terminal tab, an IDE). Sessions in live TRK
+	// Running holds every session known to be alive, mapped to the Helm terminal it runs
+	// in, or "" when it runs somewhere else (a terminal tab, an IDE). Sessions in live Helm
 	// terminals always count; elsewhere only agents with PID attribution can be checked.
 	Running map[string]string `json:"running"`
 }
@@ -44,8 +44,8 @@ func (s *Server) dash() dashView {
 		TerminalsSupported: term.Supported, Terminals: s.terms.List(), Running: running}
 }
 
-// linkSessions finds the sessions still running and links each TRK terminal to the
-// session inside it: by TRK_TERMINAL_ID (postEvent) or, for agents with PID attribution,
+// linkSessions finds the sessions still running and links each Helm terminal to the
+// session inside it: by HLM_TERMINAL_ID (postEvent) or, for agents with PID attribution,
 // by an agent process at or below the terminal's pid.
 // only, when not nil, limits the check to those sessions: the pid map keeps every
 // session ever seen, and the snapshot is rebuilt several times a second.
@@ -158,12 +158,12 @@ func (s *Server) startTerm(w http.ResponseWriter, r *http.Request) {
 		if where, ok := s.linkSessions(map[string]bool{sid: true})[sid]; ok {
 			msg := "that session is still running in another terminal: stop the agent there first, or fork it"
 			if where != "" {
-				msg = "that session is already running in a TRK terminal"
+				msg = "that session is already running in a Helm terminal"
 			}
 			http.Error(w, msg, http.StatusConflict)
 			return
 		}
-		// Without PID attribution TRK can't see a process; a busy card is the best evidence.
+		// Without PID attribution Helm can't see a process; a busy card is the best evidence.
 		if !agent.CapsOf(sp.Agent).PIDAttribution {
 			if sv, ok := s.fl.SessionView(sid, s.now()); ok && !derive.Quiet(sv.Status) {
 				http.Error(w, "that session looks active: stop it where it runs first, or fork it", http.StatusConflict)

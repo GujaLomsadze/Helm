@@ -1,5 +1,5 @@
-// Package update checks GitHub for a newer trk release and swaps the binary in place.
-// Only `trk open` and `trk update` use it; hooks and the daemon never go online.
+// Package update checks GitHub for a newer hlm release and swaps the binary in place.
+// Only `hlm open` and `hlm update` use it; hooks and the daemon never go online.
 package update
 
 import (
@@ -27,7 +27,7 @@ import (
 
 const (
 	DefaultBase = "https://github.com"
-	DefaultRepo = "GujaLomsadze/trk"
+	DefaultRepo = "GujaLomsadze/helm"
 	checkEvery  = 24 * time.Hour
 	maxArchive  = 64 << 20
 )
@@ -56,7 +56,7 @@ func AssetName(goos, goarch string) string {
 	if goos == "windows" {
 		ext = ".zip"
 	}
-	return fmt.Sprintf("trk_%s_%s%s", goos, goarch, ext)
+	return fmt.Sprintf("hlm_%s_%s%s", goos, goarch, ext)
 }
 
 // Newer reports whether latest is a newer release than current. Source and
@@ -99,20 +99,33 @@ func parse(v string) ([3]int, bool) {
 func (u *Updater) Latest(ctx context.Context) (string, error) {
 	c := *u.HTTP
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.Base+"/"+u.Repo+"/releases/latest", nil)
-	if err != nil {
-		return "", err
+	target := u.Base + "/" + u.Repo + "/releases/latest"
+	// A renamed repo answers with a redirect to its new name first (TRK became Helm):
+	// follow those hops until GitHub names the tag.
+	for hop := 0; hop < 4; hop++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+		if err != nil {
+			return "", err
+		}
+		resp, err := c.Do(req)
+		if err != nil {
+			return "", err
+		}
+		resp.Body.Close()
+		loc := resp.Header.Get("Location")
+		if resp.StatusCode/100 != 3 || loc == "" {
+			return "", fmt.Errorf("no release found (HTTP %d)", resp.StatusCode)
+		}
+		if strings.Contains(loc, "/releases/tag/") {
+			return path.Base(loc), nil
+		}
+		next, err := resp.Request.URL.Parse(loc)
+		if err != nil || !strings.HasSuffix(next.Path, "/releases/latest") {
+			return "", fmt.Errorf("no release found (redirected to %s)", loc)
+		}
+		target = next.String()
 	}
-	resp, err := c.Do(req)
-	if err != nil {
-		return "", err
-	}
-	resp.Body.Close()
-	loc := resp.Header.Get("Location")
-	if resp.StatusCode/100 != 3 || !strings.Contains(loc, "/releases/tag/") {
-		return "", fmt.Errorf("no release found (HTTP %d)", resp.StatusCode)
-	}
-	return path.Base(loc), nil
+	return "", errors.New("no release found (too many redirects)")
 }
 
 type cache struct {
@@ -204,7 +217,7 @@ func extract(archive []byte, isZip bool) ([]byte, error) {
 			return nil, err
 		}
 		for _, f := range zr.File {
-			if path.Base(f.Name) == "trk.exe" {
+			if path.Base(f.Name) == "hlm.exe" {
 				rc, err := f.Open()
 				if err != nil {
 					return nil, err
@@ -213,7 +226,7 @@ func extract(archive []byte, isZip bool) ([]byte, error) {
 				return io.ReadAll(io.LimitReader(rc, maxArchive))
 			}
 		}
-		return nil, errors.New("trk.exe not found in archive")
+		return nil, errors.New("hlm.exe not found in archive")
 	}
 	gz, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
@@ -223,12 +236,12 @@ func extract(archive []byte, isZip bool) ([]byte, error) {
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
-			return nil, errors.New("trk not found in archive")
+			return nil, errors.New("hlm not found in archive")
 		}
 		if err != nil {
 			return nil, err
 		}
-		if path.Base(h.Name) == "trk" && h.Typeflag == tar.TypeReg {
+		if path.Base(h.Name) == "hlm" && h.Typeflag == tar.TypeReg {
 			return io.ReadAll(io.LimitReader(tr, maxArchive))
 		}
 	}
@@ -240,7 +253,7 @@ func swap(exe string, bin []byte) error {
 	if real, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = real
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(exe), ".trk-update-*")
+	tmp, err := os.CreateTemp(filepath.Dir(exe), ".hlm-update-*")
 	if err != nil {
 		return fmt.Errorf("can't write next to %s: %w", exe, err)
 	}

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 func deadURL(t *testing.T) string {
@@ -89,7 +89,7 @@ func TestVersionAndShutdown(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/healthz":
-			w.Write([]byte(`{"ok":true,"app":"trk","version":"0.1.0"}`))
+			w.Write([]byte(`{"ok":true,"app":"hlm","version":"0.1.0"}`))
 		case "/v1/shutdown":
 			stopped.Add(1)
 			w.WriteHeader(202)

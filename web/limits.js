@@ -1,5 +1,5 @@
 "use strict";
-// TRK Limits page: plan-usage history (5h and weekly) with an "at this pace" projection.
+// Helm Limits page: plan-usage history (5h and weekly) with an "at this pace" projection.
 // Builds DOM with createElement/textContent only, like app.js.
 
 const MIN = 60e3, HOUR = 60 * MIN, DAY = 24 * HOUR;
@@ -48,7 +48,7 @@ const CHARTS = {
   c7: { win: "7d", title: "Weekly limit", len: 7 * DAY, bucket: 30 * MIN, recent: DAY, recentLabel: "24h",
         when: dayhm, perUnit: DAY, unit: "%/day", digits: 0, short: "weekly", acct: ["seven_d_pct", "seven_d_reset"] },
 };
-const PACE_KEY = "trk.stats.pace.v1";
+const PACE_KEY = "hlm.stats.pace.v1";
 const pace = (() => {
   const d = { c5: "recent", c7: "window" };
   try { return { ...d, ...JSON.parse(localStorage.getItem(PACE_KEY) || "{}") }; } catch { return d; }
@@ -129,9 +129,9 @@ function render(id) {
 
   if (!d.reset || !d.pts.length) {
     box.replaceChildren(head, h("div", { class: "empty-note" },
-      h("b", null, d.failed ? "Can't reach TRK" : "No readings yet"),
-      d.failed ? "The daemon didn't answer. Start it with `trk open`, then reload."
-        : "TRK records your " + c.short + " plan usage from Claude Code's statusline. It fills in once a Claude session is running."));
+      h("b", null, d.failed ? "Can't reach Helm" : "No readings yet"),
+      d.failed ? "The daemon didn't answer. Start it with `hlm open`, then reload."
+        : "Helm records your " + c.short + " plan usage from Claude Code's statusline. It fills in once a Claude session is running."));
     return;
   }
 
@@ -333,7 +333,7 @@ addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { for
 // The charts above are the default agent's (its status line keeps a history). Any other agent
 // that can read its plan usage gets a section below with its current windows, once it has
 // been used. Readings come from GET /v1/agents/{name}/limits, which the daemon caches.
-const kit = window.TRKAgentKit;
+const kit = window.HelmAgentKit;
 const agentLim = {};
 async function loadAgentLimits() {
   const agents = await kit.load();
@@ -348,7 +348,7 @@ async function loadAgentLimits() {
       if (!r.ok) throw new Error();
       agentLim[a.name] = await r.json();
     } catch {
-      agentLim[a.name] = { ...(agentLim[a.name] || {}), stale: true, error: "Can't reach TRK. Start it with `trk open`, then reload." };
+      agentLim[a.name] = { ...(agentLim[a.name] || {}), stale: true, error: "Can't reach Helm. Start it with `hlm open`, then reload." };
     }
   }));
   $("agent-limits").replaceChildren(...readers.map(agentSection));

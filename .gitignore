@@ -1,6 +1,6 @@
 dist/
-/trk
-/trk.exe
+/hlm
+/hlm.exe
 *.db
 *.db-wal
 *.db-shm

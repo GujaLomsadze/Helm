@@ -1,4 +1,4 @@
-module github.com/GujaLomsadze/trk
+module github.com/GujaLomsadze/helm
 
 go 1.27.1
 

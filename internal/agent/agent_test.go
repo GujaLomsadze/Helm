@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	_ "github.com/GujaLomsadze/trk/internal/agent/all"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	_ "github.com/GujaLomsadze/helm/internal/agent/all"
 )
 
 func TestSessionKeyAndSplit(t *testing.T) {

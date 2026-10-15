@@ -3,7 +3,7 @@ package stats
 import (
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/store"
+	"github.com/GujaLomsadze/helm/internal/store"
 )
 
 func TestAgentFilterBackgroundAndPatches(t *testing.T) {

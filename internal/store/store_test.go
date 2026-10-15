@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 func open(t *testing.T) (*Store, string) {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "trk.db")
+	p := filepath.Join(t.TempDir(), "hlm.db")
 	s, err := Open(p)
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +45,7 @@ func TestAppendAndQuery(t *testing.T) {
 func TestSessionUpsertNullableCtx(t *testing.T) {
 	s, p := open(t)
 	pct := 42.5
-	in := model.Session{SessionID: "a", Name: "trk", Task: "x", StepI: 1, StepN: 5, CtxPct: &pct, CostUSD: 0.5, StartedAt: 1, LastEventAt: 2}
+	in := model.Session{SessionID: "a", Name: "hlm", Task: "x", StepI: 1, StepN: 5, CtxPct: &pct, CostUSD: 0.5, StartedAt: 1, LastEventAt: 2}
 	if err := s.UpsertSession(in); err != nil {
 		t.Fatal(err)
 	}

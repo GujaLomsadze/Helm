@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-const trk = "/home/u/.local/bin/trk"
+const hlm = "/home/u/.local/bin/hlm"
 
 func mustParse(t *testing.T, s string) *Object {
 	t.Helper()
@@ -24,25 +24,25 @@ func TestMergeHooks(t *testing.T) {
 		check       func(t *testing.T, out string)
 	}{
 		{"empty settings", `{}`, true, false, func(t *testing.T, out string) {
-			if strings.Count(out, trk+" hook") != 11 || !strings.Contains(out, `"async": true`) {
+			if strings.Count(out, hlm+" hook") != 11 || !strings.Contains(out, `"async": true`) {
 				t.Fatalf("out = %s", out)
 			}
 		}},
 		{"keeps user hooks and appends", `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"caveman.sh"}]}]}}`, true, false, func(t *testing.T, out string) {
-			if !strings.Contains(out, "caveman.sh") || strings.Index(out, "caveman.sh") > strings.Index(out, trk+" hook") {
+			if !strings.Contains(out, "caveman.sh") || strings.Index(out, "caveman.sh") > strings.Index(out, hlm+" hook") {
 				t.Fatalf("user hook lost or reordered: %s", out)
 			}
 		}},
 		{"idempotent", "", false, false, nil}, // filled below from a merged result
-		{"stale trk path updated", `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/old/bin/trk hook"}]}]}}`, true, false, func(t *testing.T, out string) {
-			if strings.Contains(out, "/old/bin/trk") || strings.Count(out, trk+" hook") != 11 {
+		{"stale hlm path updated", `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/old/bin/hlm hook"}]}]}}`, true, false, func(t *testing.T, out string) {
+			if strings.Contains(out, "/old/bin/hlm") || strings.Count(out, hlm+" hook") != 11 {
 				t.Fatalf("out = %s", out)
 			}
 		}},
 		{"hooks not object", `{"hooks":[1]}`, false, true, nil},
 		{"event not array", `{"hooks":{"Stop":{"x":1}}}`, false, true, nil},
-		{"trkfoo is not trk", `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"trkfoo hook"}]}]}}`, true, false, func(t *testing.T, out string) {
-			if !strings.Contains(out, "trkfoo hook") || strings.Count(out, trk+" hook") != 11 {
+		{"trkfoo is not hlm", `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"trkfoo hook"}]}]}}`, true, false, func(t *testing.T, out string) {
+			if !strings.Contains(out, "trkfoo hook") || strings.Count(out, hlm+" hook") != 11 {
 				t.Fatalf("out = %s", out)
 			}
 		}},
@@ -52,12 +52,12 @@ func TestMergeHooks(t *testing.T) {
 			in := c.in
 			if c.name == "idempotent" {
 				o := mustParse(t, `{}`)
-				MergeHooks(o, trk)
+				MergeHooks(o, hlm)
 				b, _ := o.Marshal()
 				in = string(b)
 			}
 			o := mustParse(t, in)
-			changed, err := MergeHooks(o, trk)
+			changed, err := MergeHooks(o, hlm)
 			if (err != nil) != c.wantErr || changed != c.wantChanged {
 				t.Fatalf("changed=%v err=%v", changed, err)
 			}
@@ -76,16 +76,17 @@ func TestMergeStatusLine(t *testing.T) {
 		want     StatusAction
 		contains string
 	}{
-		{"absent", `{}`, false, StatusAdded, `"command": "` + trk + ` statusline"`},
-		{"already trk", `{"statusLine":{"type":"command","command":"trk statusline --then 'x'"}}`, true, StatusPresent, "--then 'x'"},
-		{"chain keeps other keys", `{"statusLine":{"type":"command","command":"ccstatusline","padding":0,"refreshInterval":10}}`, true, StatusChained, `"command": "` + trk + ` statusline --then 'ccstatusline'",` + "\n" + `    "padding": 0,` + "\n" + `    "refreshInterval": 10`},
+		{"absent", `{}`, false, StatusAdded, `"command": "` + hlm + ` statusline"`},
+		{"already hlm", `{"statusLine":{"type":"command","command":"` + hlm + ` statusline --then 'x'"}}`, true, StatusPresent, "--then 'x'"},
+		{"TRK's status line moves to hlm", `{"statusLine":{"type":"command","command":"/opt/bin/trk statusline --then 'ccstatusline'"}}`, false, StatusAdded, `"command": "` + hlm + ` statusline --then 'ccstatusline'"`},
+		{"chain keeps other keys", `{"statusLine":{"type":"command","command":"ccstatusline","padding":0,"refreshInterval":10}}`, true, StatusChained, `"command": "` + hlm + ` statusline --then 'ccstatusline'",` + "\n" + `    "padding": 0,` + "\n" + `    "refreshInterval": 10`},
 		{"declined", `{"statusLine":{"type":"command","command":"ccstatusline"}}`, false, StatusKept, `"command": "ccstatusline"`},
 		{"quotes escaped", `{"statusLine":{"type":"command","command":"jq -r '.model'"}}`, true, StatusChained, `--then 'jq -r '\\''.model'\\'''`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			o := mustParse(t, c.in)
-			got, err := MergeStatusLine(o, trk, c.chain)
+			got, err := MergeStatusLine(o, hlm, c.chain)
 			b, _ := o.Marshal()
 			if err != nil || got != c.want || !strings.Contains(string(b), c.contains) {
 				t.Fatalf("action=%s err=%v out=%s", got, err, b)
@@ -119,11 +120,11 @@ func TestShellQuote(t *testing.T) {
 	}
 }
 
-// The block must steer agents to attach trk to commands they already run:
-// a standalone trk call costs a full extra model request.
+// The block must steer agents to attach hlm to commands they already run:
+// a standalone hlm call costs a full extra model request.
 func TestSnippetTellsAgentsToChain(t *testing.T) {
 	for _, want := range []string{
-		`trk step "Writing tests"; go test ./...`, // worked example: trk first, then ;
+		`hlm step "Writing tests"; go test ./...`, // worked example: hlm first, then ;
 		"never pipe",
 		"on its own only",
 	} {
@@ -133,5 +134,21 @@ func TestSnippetTellsAgentsToChain(t *testing.T) {
 	}
 	if !strings.HasPrefix(Snippet, BlockBegin) || !strings.HasSuffix(Snippet, BlockEnd+"\n") {
 		t.Error("Snippet lost its markers")
+	}
+}
+
+func TestTRKHooksAndBlockMigrate(t *testing.T) {
+	o := mustParse(t, `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/home/u/.local/bin/trk hook","async":true}]}]}}`)
+	if changed, err := MergeHooks(o, hlm); err != nil || !changed {
+		t.Fatal(changed, err)
+	}
+	b, _ := o.Marshal()
+	if strings.Contains(string(b), "trk hook") || strings.Count(string(b), hlm+" hook") != len(HookEvents) {
+		t.Fatal(string(b))
+	}
+	old := "# Mine\n\n<!-- trk:begin -->\nold trk text\n<!-- trk:end -->\n\n# After\n"
+	got := ApplyBlock(old)
+	if strings.Contains(got, "trk") || !strings.Contains(got, "# After") || strings.Count(got, BlockBegin) != 1 || ApplyBlock(got) != got {
+		t.Fatal(got)
 	}
 }

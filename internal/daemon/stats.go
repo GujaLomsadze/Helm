@@ -1,15 +1,15 @@
 package daemon
 
 import (
-	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/agent"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/GujaLomsadze/trk/internal/stats"
-	"github.com/GujaLomsadze/trk/internal/store"
+	"github.com/GujaLomsadze/helm/internal/stats"
+	"github.com/GujaLomsadze/helm/internal/store"
 )
 
 const (
@@ -25,7 +25,7 @@ type statsCache struct {
 	body stats.Result
 }
 
-// getStats serves the Stats page: GET /v1/stats?days=7&tz=-120&repos=TRK,arrow&agent=codex
+// getStats serves the Stats page: GET /v1/stats?days=7&tz=-120&repos=Helm,arrow&agent=codex
 // days counts local calendar days ending today (1–90); tz is the browser's getTimezoneOffset().
 func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()

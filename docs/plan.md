@@ -1,27 +1,27 @@
-# TRK M1 Implementation Plan
+# Helm M1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship M1 of TRK: one static Go binary that is CLI, Claude Code hook/status-line handler and localhost daemon at once, with a phosphor-themed live dashboard showing every agent session.
+**Goal:** Ship M1 of Helm: one static Go binary that is CLI, Claude Code hook/status-line handler and localhost daemon at once, with a phosphor-themed live dashboard showing every agent session.
 
-**Architecture:** `trk <verb>` builds a small JSON envelope and POSTs it to the daemon (200 ms budget, always exit 0, auto-spawns `trk serve` if nothing answers). The daemon appends every event to SQLite (append-only), folds it into an in-memory `fleet` (sessions + per-session tracker), derives status/loops/collisions/context advice with pure functions, and pushes a full JSON snapshot over SSE (coalesced to ≤4/s) to a vanilla-JS dashboard embedded with `go:embed`.
+**Architecture:** `hlm <verb>` builds a small JSON envelope and POSTs it to the daemon (200 ms budget, always exit 0, auto-spawns `hlm serve` if nothing answers). The daemon appends every event to SQLite (append-only), folds it into an in-memory `fleet` (sessions + per-session tracker), derives status/loops/collisions/context advice with pure functions, and pushes a full JSON snapshot over SSE (coalesced to ≤4/s) to a vanilla-JS dashboard embedded with `go:embed`.
 
 **Tech Stack:** Go 1.27 (installed at `~/.local/go`), `modernc.org/sqlite` (pure Go, no CGO), `golang.org/x/sys` (process tree on macOS/Windows), stdlib `net/http` (1.22+ routing patterns), SSE, vanilla HTML/CSS/JS, IBM Plex Mono + VT323 (OFL, embedded), GoReleaser v2.
 
-**Spec:** `TRK_SPEC.md` (repo root). Executors read both.
+**Spec:** `HELM_SPEC.md` (repo root). Executors read both.
 
 ## Global Constraints
 
 - One static binary, `CGO_ENABLED=0`. Targets: linux/darwin/windows × amd64/arm64. Binary target ~10–15 MB.
-- Module path: `github.com/GujaLomsadze/trk`.
-- Daemon binds `127.0.0.1` only. Default port `7777`. Env: `TRK_PORT`, `TRK_URL` (full override; disables auto-spawn), `TRK_DATA_DIR`, `TRK_SESSION`.
-- Data dir defaults: Linux `~/.local/share/trk/` (honour `XDG_DATA_HOME`), macOS `~/Library/Application Support/trk/`, Windows `%APPDATA%\trk\`.
+- Module path: `github.com/GujaLomsadze/helm`.
+- Daemon binds `127.0.0.1` only. Default port `7777`. Env: `HLM_PORT`, `HLM_URL` (full override; disables auto-spawn), `HLM_DATA_DIR`, `HLM_SESSION`.
+- Data dir defaults: Linux `~/.local/share/hlm/` (honour `XDG_DATA_HOME`), macOS `~/Library/Application Support/hlm/`, Windows `%APPDATA%\hlm\`.
 - Reporting verbs, `hook`, `statusline`: ~200 ms HTTP timeout, **always exit 0**, no stderr when the daemon is down. `hook` prints **nothing** to stdout (SessionStart/UserPromptSubmit stdout is injected into Claude's context).
 - Auto-spawn budget: the one call that spawns the daemon may wait up to 1 s total for it; every other call stays within 200 ms.
 - Storage: append-only `events`; `sessions` and `account` are rebuildable materializations. WAL mode. Index `events(session_id, ts)`.
 - All timestamps internally are **unix ms**. Claude's `rate_limits.*.resets_at` is unix **seconds** → convert ×1000.
 - Treat every field from Claude Code as optional; missing renders `—`.
-- Hook events registered by `trk init` (verified against code.claude.com/docs/en/hooks on 2026-10-04): `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Notification`, `Stop`, `SubagentStop`, `PreCompact`. Each registered as `{"type":"command","command":"<trk> hook","async":true,"timeout":10}` (async: TRK can never slow a tool call).
+- Hook events registered by `hlm init` (verified against code.claude.com/docs/en/hooks on 2026-10-04): `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Notification`, `Stop`, `SubagentStop`, `PreCompact`. Each registered as `{"type":"command","command":"<hlm> hook","async":true,"timeout":10}` (async: Helm can never slow a tool call).
 - Status rules (spec §6.3), precedence: waiting > blocked > done > idle > looping > working. Idle after 2 min without activity. Loop: same tool+normalized input failing ≥5× in 10 min, or same file edited ≥8× in 10 min with no progress report.
 - **Context bands (user requirement, replaces spec's "warn ≥ 80%"):** <40% normal · ≥40% yellow · ≥60% red. Hints on the card: ≥50% "Start thinking about handing off / compacting"; ≥70% additionally "Don't trust architectural reasoning without re-grounding it".
 - UI: phosphor tokens exactly as spec §7.2 table; glow only on title/chips/ASCII bars/secondary buttons; no glow on body text; agent-supplied text always inserted via `textContent` (never `innerHTML`).
@@ -31,7 +31,7 @@
 
 ## Review Focus
 
-1. **Garbage on stdin to `trk hook` / `trk statusline`** (empty, non-JSON, 5 MB Write `tool_input.content`) → exit 0, hook prints nothing, statusline still prints a line, daemon stores a trimmed valid payload. Tests: Task 9 (`TestHookGarbageStdin`, `TestStatuslineGarbage`), Task 5 (`TestNormalizeTrimsHugePayload`, `TestNormalizeInvalidJSON`).
+1. **Garbage on stdin to `hlm hook` / `hlm statusline`** (empty, non-JSON, 5 MB Write `tool_input.content`) → exit 0, hook prints nothing, statusline still prints a line, daemon stores a trimmed valid payload. Tests: Task 9 (`TestHookGarbageStdin`, `TestStatuslineGarbage`), Task 5 (`TestNormalizeTrimsHugePayload`, `TestNormalizeInvalidJSON`).
 2. **Async hooks arrive out of order** (PostToolUse before PreToolUse; PermissionRequest after the PostToolUse that resolved it) → one tool call, no phantom "waiting". Tests: Task 4 (`TestTrackerOrdering`), Task 5 (`TestApplyOutOfOrderTool`).
 3. **Hostile / odd `settings.json`** (missing, empty, invalid JSON, `hooks` not an object, symlinked dotfile, second run) → invalid input aborts with no write; second run is a no-op with no new backup; symlink target is edited, link preserved; key order preserved. Tests: Task 10.
 4. **Browser attacks on a localhost daemon** (cross-origin POST from a web page, DNS-rebinding Host header, `<script>` in a task name) → 403 for foreign Host/Origin; dashboard renders text literally. Tests: Task 6 (`TestGuard`), Task 11 (`TestNoInnerHTML`).
@@ -43,7 +43,7 @@
 
 ```
 go.mod / go.sum
-cmd/trk/main.go                     # os.Exit(cli.Run(...))
+cmd/hlm/main.go                     # os.Exit(cli.Run(...))
 internal/version/version.go         # Version string, set by ldflags
 internal/config/config.go           # port, base URL, data dir
 internal/model/model.go             # Envelope, Event, Session, Account, kinds, hook map
@@ -81,7 +81,7 @@ scripts/fetch-fonts.sh, scripts/seed-demo.sh
 ### Task 1: Scaffold, config, version, CLI dispatch
 
 **Files:**
-- Create: `go.mod`, `.gitignore`, `cmd/trk/main.go`, `internal/version/version.go`, `internal/config/config.go`, `internal/cli/cli.go`
+- Create: `go.mod`, `.gitignore`, `cmd/hlm/main.go`, `internal/version/version.go`, `internal/config/config.go`, `internal/cli/cli.go`
 - Test: `internal/config/config_test.go`, `internal/cli/cli_test.go`
 
 **Interfaces:**
@@ -90,10 +90,10 @@ scripts/fetch-fonts.sh, scripts/seed-demo.sh
 - [ ] **Step 1: Branch and init module**
 
 ```bash
-cd /mnt/d/REPOS/TRK
+cd /mnt/d/REPOS/Helm
 git checkout -b m1
-go mod init github.com/GujaLomsadze/trk
-printf 'dist/\n/trk\n/trk.exe\n*.db\n*.db-wal\n*.db-shm\n' > .gitignore
+go mod init github.com/GujaLomsadze/helm
+printf 'dist/\n/hlm\n/hlm.exe\n*.db\n*.db-wal\n*.db-shm\n' > .gitignore
 ```
 
 - [ ] **Step 2: Write failing tests**
@@ -117,8 +117,8 @@ func TestBaseURL(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			t.Setenv("TRK_PORT", c.port)
-			t.Setenv("TRK_URL", c.url)
+			t.Setenv("HLM_PORT", c.port)
+			t.Setenv("HLM_URL", c.url)
 			if got := BaseURL(); got != c.want {
 				t.Fatalf("BaseURL() = %q, want %q", got, c.want)
 			}
@@ -130,9 +130,9 @@ func TestBaseURL(t *testing.T) {
 }
 
 func TestDataDirOverride(t *testing.T) {
-	t.Setenv("TRK_DATA_DIR", "/tmp/trk-x")
+	t.Setenv("HLM_DATA_DIR", "/tmp/hlm-x")
 	got, err := DataDir()
-	if err != nil || got != "/tmp/trk-x" {
+	if err != nil || got != "/tmp/hlm-x" {
 		t.Fatalf("DataDir() = %q, %v", got, err)
 	}
 }
@@ -151,7 +151,7 @@ import (
 func TestVersion(t *testing.T) {
 	var out, errb bytes.Buffer
 	code := Run([]string{"version"}, strings.NewReader(""), &out, &errb)
-	if code != 0 || !strings.HasPrefix(out.String(), "trk ") {
+	if code != 0 || !strings.HasPrefix(out.String(), "hlm ") {
 		t.Fatalf("code=%d out=%q", code, out.String())
 	}
 }
@@ -180,7 +180,7 @@ var Version = "dev"
 
 `internal/config/config.go`:
 ```go
-// Package config resolves TRK's environment-driven settings. Everything is optional.
+// Package config resolves Helm's environment-driven settings. Everything is optional.
 package config
 
 import (
@@ -195,25 +195,25 @@ import (
 const DefaultPort = 7777
 
 func Port() int {
-	if p, err := strconv.Atoi(os.Getenv("TRK_PORT")); err == nil && p > 0 && p < 65536 {
+	if p, err := strconv.Atoi(os.Getenv("HLM_PORT")); err == nil && p > 0 && p < 65536 {
 		return p
 	}
 	return DefaultPort
 }
 
-// BaseURL is where clients send events. TRK_URL wins (e.g. WSL ↔ Windows).
+// BaseURL is where clients send events. HLM_URL wins (e.g. WSL ↔ Windows).
 func BaseURL() string {
-	if u := strings.TrimRight(os.Getenv("TRK_URL"), "/"); u != "" {
+	if u := strings.TrimRight(os.Getenv("HLM_URL"), "/"); u != "" {
 		return u
 	}
 	return fmt.Sprintf("http://127.0.0.1:%d", Port())
 }
 
 // IsLocalDefault reports whether clients talk to a daemon this machine may spawn.
-func IsLocalDefault() bool { return os.Getenv("TRK_URL") == "" }
+func IsLocalDefault() bool { return os.Getenv("HLM_URL") == "" }
 
 func DataDir() (string, error) {
-	if d := os.Getenv("TRK_DATA_DIR"); d != "" {
+	if d := os.Getenv("HLM_DATA_DIR"); d != "" {
 		return d, nil
 	}
 	home, err := os.UserHomeDir()
@@ -222,54 +222,54 @@ func DataDir() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(home, "Library", "Application Support", "trk"), nil
+		return filepath.Join(home, "Library", "Application Support", "hlm"), nil
 	case "windows":
 		if a := os.Getenv("APPDATA"); a != "" {
-			return filepath.Join(a, "trk"), nil
+			return filepath.Join(a, "hlm"), nil
 		}
 	}
 	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
-		return filepath.Join(x, "trk"), nil
+		return filepath.Join(x, "hlm"), nil
 	}
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "share", "trk"), nil
+	return filepath.Join(home, ".local", "share", "hlm"), nil
 }
 ```
 
 `internal/cli/cli.go`:
 ```go
-// Package cli implements every trk subcommand.
+// Package cli implements every hlm subcommand.
 package cli
 
 import (
 	"fmt"
 	"io"
 
-	"github.com/GujaLomsadze/trk/internal/version"
+	"github.com/GujaLomsadze/helm/internal/version"
 )
 
-const usageText = `trk — live tracker for coding agents
+const usageText = `hlm — live tracker for coding agents
 
-  trk serve                      run daemon + dashboard (auto-spawned when needed)
-  trk open                       open the dashboard
-  trk init                       wire up Claude Code hooks, status line, CLAUDE.md
+  hlm serve                      run daemon + dashboard (auto-spawned when needed)
+  hlm open                       open the dashboard
+  hlm init                       wire up Claude Code hooks, status line, CLAUDE.md
 
-  trk start "<task>" --steps N   declare a task
-  trk step "<what>"              declare the current step
-  trk progress i/N               declare progress
-  trk blocked "<question>"       ask the human for a decision
-  trk done "<result>"            declare completion
+  hlm start "<task>" --steps N   declare a task
+  hlm step "<what>"              declare the current step
+  hlm progress i/N               declare progress
+  hlm blocked "<question>"       ask the human for a decision
+  hlm done "<result>"            declare completion
 
-  trk hook                       (Claude Code) forward hook JSON from stdin
-  trk statusline [--then CMD]    (Claude Code) forward status JSON, print a line
-  trk version
+  hlm hook                       (Claude Code) forward hook JSON from stdin
+  hlm statusline [--then CMD]    (Claude Code) forward status JSON, print a line
+  hlm version
 `
 
 func usage(w io.Writer) { fmt.Fprint(w, usageText) }
 
-// Run executes one trk invocation and returns the process exit code.
+// Run executes one hlm invocation and returns the process exit code.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		usage(stdout)
@@ -277,37 +277,37 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	switch args[0] {
 	case "version", "--version", "-v":
-		fmt.Fprintf(stdout, "trk %s\n", version.Version)
+		fmt.Fprintf(stdout, "hlm %s\n", version.Version)
 		return 0
 	case "help", "--help", "-h":
 		usage(stdout)
 		return 0
 	}
-	fmt.Fprintf(stderr, "trk: unknown command %q (try `trk help`)\n", args[0])
+	fmt.Fprintf(stderr, "hlm: unknown command %q (try `hlm help`)\n", args[0])
 	return 2
 }
 ```
 
-`cmd/trk/main.go`:
+`cmd/hlm/main.go`:
 ```go
 package main
 
 import (
 	"os"
 
-	"github.com/GujaLomsadze/trk/internal/cli"
+	"github.com/GujaLomsadze/helm/internal/cli"
 )
 
 func main() { os.Exit(cli.Run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 ```
 
-- [ ] **Step 5: Run tests** — `go test ./... && go build ./cmd/trk && ./trk version` → PASS, prints `trk dev`.
+- [ ] **Step 5: Run tests** — `go test ./... && go build ./cmd/hlm && ./hlm version` → PASS, prints `hlm dev`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add TRK_SPEC.md docs/plan.md go.mod .gitignore cmd internal
-git commit -m "chore: scaffold trk module, config and CLI dispatch"
+git add HELM_SPEC.md docs/plan.md go.mod .gitignore cmd internal
+git commit -m "chore: scaffold hlm module, config and CLI dispatch"
 ```
 
 ---
@@ -363,12 +363,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 func open(t *testing.T) (*Store, string) {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "trk.db")
+	p := filepath.Join(t.TempDir(), "hlm.db")
 	s, err := Open(p)
 	if err != nil {
 		t.Fatal(err)
@@ -401,7 +401,7 @@ func TestAppendAndQuery(t *testing.T) {
 func TestSessionUpsertNullableCtx(t *testing.T) {
 	s, p := open(t)
 	pct := 42.5
-	in := model.Session{SessionID: "a", Name: "trk", Task: "x", StepI: 1, StepN: 5, CtxPct: &pct, CostUSD: 0.5, StartedAt: 1, LastEventAt: 2}
+	in := model.Session{SessionID: "a", Name: "hlm", Task: "x", StepI: 1, StepN: 5, CtxPct: &pct, CostUSD: 0.5, StartedAt: 1, LastEventAt: 2}
 	if err := s.UpsertSession(in); err != nil {
 		t.Fatal(err)
 	}
@@ -465,8 +465,8 @@ type Envelope struct {
 	TS         int64           `json:"ts,omitempty"`          // unix ms at the caller
 	Source     string          `json:"source"`                // cli|hook|statusline|api
 	Kind       string          `json:"kind,omitempty"`        // empty for hook/statusline: derived by the daemon
-	SessionID  string          `json:"session_id,omitempty"`  // explicit session (TRK_SESSION or third-party)
-	SessionVia string          `json:"session_via,omitempty"` // "env" when SessionID came from TRK_SESSION
+	SessionID  string          `json:"session_id,omitempty"`  // explicit session (HLM_SESSION or third-party)
+	SessionVia string          `json:"session_via,omitempty"` // "env" when SessionID came from HLM_SESSION
 	ClaudePID  int             `json:"claude_pid,omitempty"`  // nearest ancestor claude process, 0 if none
 	Payload    json.RawMessage `json:"payload,omitempty"`
 }
@@ -547,7 +547,7 @@ const (
 	KindOther        = "event"
 )
 
-// HookEvents are the Claude Code hook events trk init registers.
+// HookEvents are the Claude Code hook events hlm init registers.
 var HookEvents = []string{
 	"SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
 	"PostToolUseFailure", "PermissionRequest", "Notification", "Stop", "SubagentStop", "PreCompact",
@@ -596,7 +596,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 	_ "modernc.org/sqlite"
 )
 
@@ -1266,7 +1266,7 @@ func CtxAdvice(pct *float64) CtxBand {
 
 `internal/derive/tracker.go`:
 ```go
-// Package derive holds TRK's pure heuristics: status, loops, collisions, context advice.
+// Package derive holds Helm's pure heuristics: status, loops, collisions, context advice.
 package derive
 
 import "sort"
@@ -1308,7 +1308,7 @@ type Span struct {
 // Hooks run async, so events can arrive out of order: every mutation compares timestamps.
 type Tracker struct {
 	ProgressAt   int64 // last start/step/progress
-	Blocked      *Need // declared via trk blocked
+	Blocked      *Need // declared via hlm blocked
 	Pending      *Need // permission prompt / question awaiting the human
 	LastClear    int64 // latest event that resolves Pending
 	DoneAt       int64 // done/stop/session_end
@@ -1723,9 +1723,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/derive"
-	"github.com/GujaLomsadze/trk/internal/gitinfo"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/derive"
+	"github.com/GujaLomsadze/helm/internal/gitinfo"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 const sec = int64(1000)
@@ -1972,8 +1972,8 @@ package fleet
 import (
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/derive"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/derive"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 func TestViewSortCollisionsAndHiding(t *testing.T) {
@@ -2042,7 +2042,7 @@ import (
 	"errors"
 )
 
-// payload is the union of fields TRK reads from CLI, hook and status line JSON.
+// payload is the union of fields Helm reads from CLI, hook and status line JSON.
 // Everything is optional; unknown fields are ignored; type mismatches skip the field.
 type payload struct {
 	// CLI verbs
@@ -2196,9 +2196,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/GujaLomsadze/trk/internal/derive"
-	"github.com/GujaLomsadze/trk/internal/gitinfo"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/derive"
+	"github.com/GujaLomsadze/helm/internal/gitinfo"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 type GitLookup func(cwd string) gitinfo.Info
@@ -2525,8 +2525,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/derive"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/derive"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 const (
@@ -2778,8 +2778,8 @@ func localMidnight(now int64) int64 {
   - `web.FS embed.FS`
   - `daemon.NewServer(st *store.Store, fl *fleet.Fleet, logger *log.Logger) *Server`, `(*Server) Handler() http.Handler`, `(*Server) Loop(ctx context.Context)`
   - `daemon.Run(ctx context.Context, o Options) error`, `type Options struct{ Addr, DataDir string; Logger *log.Logger; OnListen func(addr string) }`, `var ErrAlreadyRunning`
-  - Pid file `<DataDir>/trk.pid` while running.
-  - HTTP: `POST /v1/events` (202 stored, 204 dropped duplicate, 400 bad JSON, 403 guard), `GET /v1/sessions` (View JSON), `GET /v1/sessions/{id}` (`{"session":SessionView,"events":[...200 newest]}`), `GET /v1/account`, `GET /v1/stream` (SSE `event: snapshot`), `GET /healthz` (`{"ok":true,"app":"trk","version":"..."}`), `GET /` (embedded UI).
+  - Pid file `<DataDir>/hlm.pid` while running.
+  - HTTP: `POST /v1/events` (202 stored, 204 dropped duplicate, 400 bad JSON, 403 guard), `GET /v1/sessions` (View JSON), `GET /v1/sessions/{id}` (`{"session":SessionView,"events":[...200 newest]}`), `GET /v1/account`, `GET /v1/stream` (SSE `event: snapshot`), `GET /healthz` (`{"ok":true,"app":"hlm","version":"..."}`), `GET /` (embedded UI).
 
 - [ ] **Step 1: Minimal web package**
 
@@ -2795,7 +2795,7 @@ var FS embed.FS
 ```
 `web/index.html`:
 ```html
-<!doctype html><meta charset="utf-8"><title>TRK.EXE</title><p>TRK.EXE</p>
+<!doctype html><meta charset="utf-8"><title>HELM.EXE</title><p>HELM.EXE</p>
 ```
 (Task 11 widens the embed pattern to `index.html app.js theme.css fonts`.)
 
@@ -2818,14 +2818,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/fleet"
-	"github.com/GujaLomsadze/trk/internal/gitinfo"
-	"github.com/GujaLomsadze/trk/internal/store"
+	"github.com/GujaLomsadze/helm/internal/fleet"
+	"github.com/GujaLomsadze/helm/internal/gitinfo"
+	"github.com/GujaLomsadze/helm/internal/store"
 )
 
 func newTestServer(t *testing.T) (*httptest.Server, *Server) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "trk.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "hlm.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2923,12 +2923,12 @@ func TestHealthzAndIndex(t *testing.T) {
 	ts, _ := newTestServer(t)
 	var h map[string]any
 	getJSON(t, ts.URL+"/healthz", &h)
-	if h["app"] != "trk" || h["ok"] != true {
+	if h["app"] != "hlm" || h["ok"] != true {
 		t.Fatalf("healthz = %v", h)
 	}
 	resp, _ := http.Get(ts.URL + "/")
 	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 || !strings.Contains(string(b), "TRK.EXE") {
+	if resp.StatusCode != 200 || !strings.Contains(string(b), "HELM.EXE") {
 		t.Fatalf("index = %d %q", resp.StatusCode, b)
 	}
 }
@@ -3028,7 +3028,7 @@ func TestRunSingleInstanceAndPidFile(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("daemon did not start")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "trk.pid")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "hlm.pid")); err != nil {
 		t.Fatalf("pid file: %v", err)
 	}
 	err := Run(context.Background(), Options{Addr: addr, DataDir: t.TempDir(), Logger: log.New(io.Discard, "", 0)})
@@ -3044,7 +3044,7 @@ func TestRunSingleInstanceAndPidFile(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("shutdown hung")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "trk.pid")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "hlm.pid")); !os.IsNotExist(err) {
 		t.Fatal("pid file not removed")
 	}
 }
@@ -3113,7 +3113,7 @@ func (h *Hub) Publish(b []byte) {
 
 `internal/daemon/server.go`:
 ```go
-// Package daemon serves the TRK HTTP API, SSE stream and dashboard.
+// Package daemon serves the Helm HTTP API, SSE stream and dashboard.
 package daemon
 
 import (
@@ -3127,11 +3127,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/fleet"
-	"github.com/GujaLomsadze/trk/internal/model"
-	"github.com/GujaLomsadze/trk/internal/store"
-	"github.com/GujaLomsadze/trk/internal/version"
-	"github.com/GujaLomsadze/trk/web"
+	"github.com/GujaLomsadze/helm/internal/fleet"
+	"github.com/GujaLomsadze/helm/internal/model"
+	"github.com/GujaLomsadze/helm/internal/store"
+	"github.com/GujaLomsadze/helm/internal/version"
+	"github.com/GujaLomsadze/helm/web"
 )
 
 const maxBody = 4 << 20
@@ -3251,7 +3251,7 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getAccount(w http.ResponseWriter, r *http.Request) { writeJSON(w, s.fl.Account()) }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{"ok": true, "app": "trk", "version": version.Version})
+	writeJSON(w, map[string]any{"ok": true, "app": "hlm", "version": version.Version})
 }
 
 func (s *Server) snapshot() []byte {
@@ -3347,12 +3347,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/fleet"
-	"github.com/GujaLomsadze/trk/internal/gitinfo"
-	"github.com/GujaLomsadze/trk/internal/store"
+	"github.com/GujaLomsadze/helm/internal/fleet"
+	"github.com/GujaLomsadze/helm/internal/gitinfo"
+	"github.com/GujaLomsadze/helm/internal/store"
 )
 
-var ErrAlreadyRunning = errors.New("trk daemon already running")
+var ErrAlreadyRunning = errors.New("hlm daemon already running")
 
 type Options struct {
 	Addr     string
@@ -3369,7 +3369,7 @@ func Run(ctx context.Context, o Options) error {
 	}
 	ln, err := net.Listen("tcp", o.Addr)
 	if err != nil {
-		if isTrk(o.Addr) {
+		if isHlm(o.Addr) {
 			return ErrAlreadyRunning
 		}
 		return fmt.Errorf("listen %s: %w", o.Addr, err)
@@ -3378,7 +3378,7 @@ func Run(ctx context.Context, o Options) error {
 		ln.Close()
 		return err
 	}
-	st, err := store.Open(filepath.Join(o.DataDir, "trk.db"))
+	st, err := store.Open(filepath.Join(o.DataDir, "hlm.db"))
 	if err != nil {
 		ln.Close()
 		return err
@@ -3389,7 +3389,7 @@ func Run(ctx context.Context, o Options) error {
 	if err := restore(st, fl, time.Now().UnixMilli()); err != nil {
 		o.Logger.Printf("restore: %v", err) // degrade to empty state, keep serving
 	}
-	pidFile := filepath.Join(o.DataDir, "trk.pid")
+	pidFile := filepath.Join(o.DataDir, "hlm.pid")
 	_ = os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0o644)
 	defer os.Remove(pidFile)
 
@@ -3406,7 +3406,7 @@ func Run(ctx context.Context, o Options) error {
 			hs.Close() // SSE connections never go idle
 		}
 	}()
-	o.Logger.Printf("trk listening on http://%s", ln.Addr())
+	o.Logger.Printf("hlm listening on http://%s", ln.Addr())
 	if o.OnListen != nil {
 		o.OnListen(ln.Addr().String())
 	}
@@ -3436,7 +3436,7 @@ func restore(st *store.Store, fl *fleet.Fleet, now int64) error {
 	return nil
 }
 
-func isTrk(addr string) bool {
+func isHlm(addr string) bool {
 	c := http.Client{Timeout: 500 * time.Millisecond}
 	resp, err := c.Get("http://" + addr + "/healthz")
 	if err != nil {
@@ -3444,7 +3444,7 @@ func isTrk(addr string) bool {
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return strings.Contains(string(b), `"app":"trk"`)
+	return strings.Contains(string(b), `"app":"hlm"`)
 }
 ```
 
@@ -3479,7 +3479,7 @@ func TestFindClaude(t *testing.T) {
 		100: {PPID: 1, Name: "zsh"},
 		200: {PPID: 100, Name: "claude"},
 		300: {PPID: 200, Name: "zsh"},
-		400: {PPID: 300, Name: "trk"},
+		400: {PPID: 300, Name: "hlm"},
 		500: {PPID: 100, Name: "node", Cmdline: "node /usr/lib/node_modules/@anthropic-ai/claude-code/cli.js"},
 		600: {PPID: 500, Name: "bash"},
 		700: {PPID: 100, Name: "node", Cmdline: "node server.js"},
@@ -3745,7 +3745,7 @@ func snapshot() func(int) (proc, bool) { return func(int) (proc, bool) { return 
 - Consumes: `config.BaseURL/IsLocalDefault/DataDir`, `model.Envelope`.
 - Produces: `type Client struct{ BaseURL string; HTTP *http.Client; AllowSpawn bool; Spawn func() error; SpawnBudget time.Duration }`, `Default() *Client`, `(*Client) Send(model.Envelope) bool`, `(*Client) Healthy() bool`, `(*Client) EnsureDaemon(wait time.Duration) bool`, `SpawnDaemon() error`.
 
-Rules: `HTTP.Timeout = 200ms`. Spawn only when `AllowSpawn` (`TRK_URL` unset and `TRK_NO_SPAWN` unset) **and** the error is a dial error (`*net.OpError` with `Op=="dial"`). After spawning, retry every 50 ms until `SpawnBudget` (1 s). Status ≥400 counts as failure but never triggers spawn. `SpawnDaemon` runs `os.Executable() serve` with stdio nil, `Dir` = home dir (don't pin a worktree on Windows), detached (`Setsid` on unix; `CREATE_NEW_PROCESS_GROUP|DETACHED_PROCESS` + `HideWindow` on Windows), then `Process.Release()`.
+Rules: `HTTP.Timeout = 200ms`. Spawn only when `AllowSpawn` (`HLM_URL` unset and `HLM_NO_SPAWN` unset) **and** the error is a dial error (`*net.OpError` with `Op=="dial"`). After spawning, retry every 50 ms until `SpawnBudget` (1 s). Status ≥400 counts as failure but never triggers spawn. `SpawnDaemon` runs `os.Executable() serve` with stdio nil, `Dir` = home dir (don't pin a worktree on Windows), detached (`Setsid` on unix; `CREATE_NEW_PROCESS_GROUP|DETACHED_PROCESS` + `HideWindow` on Windows), then `Process.Release()`.
 
 - [ ] **Step 1: Failing tests** (`client_test.go`)
 
@@ -3760,7 +3760,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 func deadURL(t *testing.T) string {
@@ -3843,7 +3843,7 @@ func TestSendSpawnsThenDelivers(t *testing.T) {
 
 ```go
 // Package client sends events to the daemon. It never returns errors to callers:
-// TRK must not break an agent.
+// Helm must not break an agent.
 package client
 
 import (
@@ -3858,8 +3858,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/config"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/config"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 const Timeout = 200 * time.Millisecond
@@ -3876,7 +3876,7 @@ func Default() *Client {
 	return &Client{
 		BaseURL:     config.BaseURL(),
 		HTTP:        &http.Client{Timeout: Timeout},
-		AllowSpawn:  config.IsLocalDefault() && os.Getenv("TRK_NO_SPAWN") == "",
+		AllowSpawn:  config.IsLocalDefault() && os.Getenv("HLM_NO_SPAWN") == "",
 		Spawn:       SpawnDaemon,
 		SpawnBudget: time.Second,
 	}
@@ -4011,13 +4011,13 @@ func detach(cmd *exec.Cmd) {
 
 Rules:
 - Reporting verbs, `hook`, `statusline` are wrapped by `defer recover()` and **always return 0**. Bad args: one usage line to stderr, exit 0, nothing sent.
-- Envelope: `TS=nowMS()`, `ClaudePID=findClaude()`; `TRK_SESSION` → `SessionID` + `SessionVia="env"`. CLI payload: `{"text","steps","i","n","cwd"}` (omitempty).
+- Envelope: `TS=nowMS()`, `ClaudePID=findClaude()`; `HLM_SESSION` → `SessionID` + `SessionVia="env"`. CLI payload: `{"text","steps","i","n","cwd"}` (omitempty).
 - `start "<task>" --steps N` accepts `--steps N` / `--steps=N` anywhere; remaining args joined with spaces as text.
 - `progress 3/5` or `progress 3`.
 - `hook`: read stdin (limit 8 MB); if not valid JSON → send nothing; else envelope `{source:"hook", payload:<stdin>}`. **Print nothing.**
 - `statusline [--then CMD]`: read stdin; send in a goroutine (if valid JSON); with `--then`, run CMD via `sh -c` (Windows: `bash -c` if on PATH, else `cmd /C`) with the same stdin bytes, stdout → our stdout, stderr discarded; otherwise print `compactLine`. Wait for the send before exiting.
-- `compactLine` → `trk · ctx 42% · 5h 23% · 7d 61%`, `—` for each missing/null value, and `—` for a window whose `resets_at` is in the past.
-- `serve`: logs to `<data>/trk.log` (truncate at start if >5 MB); prints `trk serving http://localhost:<port>` via `OnListen`; `ErrAlreadyRunning` → print `trk already running at …`, exit 0; signals via `signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)`.
+- `compactLine` → `hlm · ctx 42% · 5h 23% · 7d 61%`, `—` for each missing/null value, and `—` for a window whose `resets_at` is in the past.
+- `serve`: logs to `<data>/hlm.log` (truncate at start if >5 MB); prints `hlm serving http://localhost:<port>` via `OnListen`; `ErrAlreadyRunning` → print `hlm already running at …`, exit 0; signals via `signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)`.
 - `open`: `EnsureDaemon(3s)`, print URL, open browser — macOS `open`, Windows `rundll32 url.dll,FileProtocolHandler`, WSL (`/proc/version` contains `microsoft`) `wslview` if present else `cmd.exe /c start "" URL`, else `xdg-open`. Failure to launch a browser is not an error (URL is printed).
 
 - [ ] **Step 1: Failing tests**
@@ -4032,7 +4032,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 func capture(t *testing.T) *[]model.Envelope {
@@ -4083,7 +4083,7 @@ func TestParseProgress(t *testing.T) {
 
 func TestReportingVerbs(t *testing.T) {
 	got := capture(t)
-	t.Setenv("TRK_SESSION", "")
+	t.Setenv("HLM_SESSION", "")
 	for _, args := range [][]string{
 		{"start", "Refactor", "--steps", "5"}, {"step", "Writing tests"}, {"progress", "3/5"},
 		{"blocked", "Drop legacy topic?"}, {"done", "Tests green"},
@@ -4103,9 +4103,9 @@ func TestReportingVerbs(t *testing.T) {
 	}
 }
 
-func TestTrkSessionEnv(t *testing.T) {
+func TestHlmSessionEnv(t *testing.T) {
 	got := capture(t)
-	t.Setenv("TRK_SESSION", "my-sess")
+	t.Setenv("HLM_SESSION", "my-sess")
 	run("step", "x")
 	if e := (*got)[0]; e.SessionID != "my-sess" || e.SessionVia != "env" {
 		t.Fatalf("envelope = %+v", e)
@@ -4172,7 +4172,7 @@ func TestHookGarbageStdin(t *testing.T) {
 }
 
 func TestHookDaemonDownIsFastAndSilent(t *testing.T) {
-	t.Setenv("TRK_URL", "http://127.0.0.1:1") // nothing listens; TRK_URL disables spawn
+	t.Setenv("HLM_URL", "http://127.0.0.1:1") // nothing listens; HLM_URL disables spawn
 	start := time.Now()
 	var out, errb bytes.Buffer
 	code := Run([]string{"hook"}, strings.NewReader(`{"session_id":"A"}`), &out, &errb)
@@ -4184,10 +4184,10 @@ func TestHookDaemonDownIsFastAndSilent(t *testing.T) {
 func TestCompactLine(t *testing.T) {
 	future := time.Now().Add(time.Hour).Unix()
 	cases := []struct{ in, want string }{
-		{`{"context_window":{"used_percentage":42.4},"rate_limits":{"five_hour":{"used_percentage":23,"resets_at":` + itoa(future) + `},"seven_day":{"used_percentage":61.2}}}`, "trk · ctx 42% · 5h 23% · 7d 61%"},
-		{`{"context_window":{"used_percentage":null}}`, "trk · ctx — · 5h — · 7d —"},
-		{`{"rate_limits":{"five_hour":{"used_percentage":90,"resets_at":1}}}`, "trk · ctx — · 5h — · 7d —"},
-		{`garbage`, "trk · ctx — · 5h — · 7d —"},
+		{`{"context_window":{"used_percentage":42.4},"rate_limits":{"five_hour":{"used_percentage":23,"resets_at":` + itoa(future) + `},"seven_day":{"used_percentage":61.2}}}`, "hlm · ctx 42% · 5h 23% · 7d 61%"},
+		{`{"context_window":{"used_percentage":null}}`, "hlm · ctx — · 5h — · 7d —"},
+		{`{"rate_limits":{"five_hour":{"used_percentage":90,"resets_at":1}}}`, "hlm · ctx — · 5h — · 7d —"},
+		{`garbage`, "hlm · ctx — · 5h — · 7d —"},
 	}
 	for _, c := range cases {
 		if got := compactLine([]byte(c.in)); got != c.want {
@@ -4199,7 +4199,7 @@ func TestCompactLine(t *testing.T) {
 func TestStatuslineGarbage(t *testing.T) {
 	capture(t)
 	code, out := runIn("not json", "statusline")
-	if code != 0 || strings.TrimSpace(out) != "trk · ctx — · 5h — · 7d —" {
+	if code != 0 || strings.TrimSpace(out) != "hlm · ctx — · 5h — · 7d —" {
 		t.Fatalf("code=%d out=%q", code, out)
 	}
 }
@@ -4236,9 +4236,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/client"
-	"github.com/GujaLomsadze/trk/internal/model"
-	"github.com/GujaLomsadze/trk/internal/ptree"
+	"github.com/GujaLomsadze/helm/internal/client"
+	"github.com/GujaLomsadze/helm/internal/model"
+	"github.com/GujaLomsadze/helm/internal/ptree"
 )
 
 // Seams for tests.
@@ -4258,7 +4258,7 @@ type cliPayload struct {
 
 func envelope(source, kind string, payload json.RawMessage) model.Envelope {
 	env := model.Envelope{TS: nowMS(), Source: source, Kind: kind, ClaudePID: findClaude(), Payload: payload}
-	if s := os.Getenv("TRK_SESSION"); s != "" {
+	if s := os.Getenv("HLM_SESSION"); s != "" {
 		env.SessionID, env.SessionVia = s, model.AttrEnv
 	}
 	return env
@@ -4271,13 +4271,13 @@ func report(kind string, args []string, stderr io.Writer) int {
 	case model.KindStart:
 		p.Text, p.Steps = parseStart(args)
 		if p.Text == "" {
-			fmt.Fprintln(stderr, `usage: trk start "<task>" [--steps N]`)
+			fmt.Fprintln(stderr, `usage: hlm start "<task>" [--steps N]`)
 			return 0
 		}
 	case model.KindStep, model.KindBlocked:
 		p.Text = strings.TrimSpace(strings.Join(args, " "))
 		if p.Text == "" {
-			fmt.Fprintf(stderr, "usage: trk %s \"<text>\"\n", kind)
+			fmt.Fprintf(stderr, "usage: hlm %s \"<text>\"\n", kind)
 			return 0
 		}
 	case model.KindDone:
@@ -4285,7 +4285,7 @@ func report(kind string, args []string, stderr io.Writer) int {
 	case model.KindProgress:
 		i, n, ok := parseProgress(strings.Join(args, ""))
 		if !ok {
-			fmt.Fprintln(stderr, "usage: trk progress <i>/<N>")
+			fmt.Fprintln(stderr, "usage: hlm progress <i>/<N>")
 			return 0
 		}
 		p.I, p.N = i, n
@@ -4347,7 +4347,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 const maxStdin = 8 << 20
@@ -4444,7 +4444,7 @@ func compactLine(raw []byte) string {
 	if p.RateLimits != nil {
 		five, seven = p.RateLimits.FiveHour, p.RateLimits.SevenDay
 	}
-	return fmt.Sprintf("trk · ctx %s · 5h %s · 7d %s", pct(ctx), w(five), w(seven))
+	return fmt.Sprintf("hlm · ctx %s · 5h %s · 7d %s", pct(ctx), w(five), w(seven))
 }
 ```
 
@@ -4467,9 +4467,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/client"
-	"github.com/GujaLomsadze/trk/internal/config"
-	"github.com/GujaLomsadze/trk/internal/daemon"
+	"github.com/GujaLomsadze/helm/internal/client"
+	"github.com/GujaLomsadze/helm/internal/config"
+	"github.com/GujaLomsadze/helm/internal/daemon"
 )
 
 func serve(stdout, stderr io.Writer) int {
@@ -4478,10 +4478,10 @@ func serve(stdout, stderr io.Writer) int {
 		err = os.MkdirAll(dir, 0o755)
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "trk serve: data dir: %v\n", err)
+		fmt.Fprintf(stderr, "hlm serve: data dir: %v\n", err)
 		return 1
 	}
-	logPath := filepath.Join(dir, "trk.log")
+	logPath := filepath.Join(dir, "hlm.log")
 	if st, err := os.Stat(logPath); err == nil && st.Size() > 5<<20 {
 		os.Truncate(logPath, 0)
 	}
@@ -4495,14 +4495,14 @@ func serve(stdout, stderr io.Writer) int {
 	addr := fmt.Sprintf("127.0.0.1:%d", config.Port())
 	err = daemon.Run(ctx, daemon.Options{
 		Addr: addr, DataDir: dir, Logger: log.New(logw, "", log.LstdFlags),
-		OnListen: func(string) { fmt.Fprintf(stdout, "trk serving http://localhost:%d\n", config.Port()) },
+		OnListen: func(string) { fmt.Fprintf(stdout, "hlm serving http://localhost:%d\n", config.Port()) },
 	})
 	if errors.Is(err, daemon.ErrAlreadyRunning) {
-		fmt.Fprintf(stdout, "trk already running at http://localhost:%d\n", config.Port())
+		fmt.Fprintf(stdout, "hlm already running at http://localhost:%d\n", config.Port())
 		return 0
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "trk serve: %v\n", err)
+		fmt.Fprintf(stderr, "hlm serve: %v\n", err)
 		return 1
 	}
 	return 0
@@ -4511,7 +4511,7 @@ func serve(stdout, stderr io.Writer) int {
 func open(stdout, stderr io.Writer) int {
 	url := config.BaseURL() + "/"
 	if !client.Default().EnsureDaemon(3 * time.Second) {
-		fmt.Fprintf(stderr, "trk: daemon not reachable at %s\n", url)
+		fmt.Fprintf(stderr, "hlm: daemon not reachable at %s\n", url)
 		return 1
 	}
 	fmt.Fprintln(stdout, url)
@@ -4557,13 +4557,13 @@ Modify `cli.Run` — replace the body after the `len(args)==0` check:
 	case "init":
 		return initCmd(rest, stdin, stdout, stderr)
 	case "version", "--version", "-v":
-		fmt.Fprintf(stdout, "trk %s\n", version.Version)
+		fmt.Fprintf(stdout, "hlm %s\n", version.Version)
 		return 0
 	case "help", "--help", "-h":
 		usage(stdout)
 		return 0
 	}
-	fmt.Fprintf(stderr, "trk: unknown command %q (try `trk help`)\n", cmd)
+	fmt.Fprintf(stderr, "hlm: unknown command %q (try `hlm help`)\n", cmd)
 	return 2
 }
 
@@ -4578,15 +4578,15 @@ func safe(f func() int) (code int) {
 	return 0
 }
 ```
-Until Task 10 lands, add a temporary `func initCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int { fmt.Fprintln(stderr, "trk init: not implemented yet"); return 1 }` in `init.go`; Task 10 replaces it.
+Until Task 10 lands, add a temporary `func initCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int { fmt.Fprintln(stderr, "hlm init: not implemented yet"); return 1 }` in `init.go`; Task 10 replaces it.
 
-- [ ] **Step 4: Run** — `go test ./internal/cli -v && go build -o trk ./cmd/trk && echo '{}' | ./trk hook; echo "exit=$?"` → PASS, `exit=0`.
-- [ ] **Step 5: Manual smoke** — `TRK_PORT=17777 TRK_DATA_DIR=$(mktemp -d) ./trk step "hello"` then `curl -s localhost:17777/v1/sessions` shows a session with `step_text":"hello"` (auto-spawned). Kill: `kill $(cat $TRK_DATA_DIR/trk.pid)`.
+- [ ] **Step 4: Run** — `go test ./internal/cli -v && go build -o hlm ./cmd/hlm && echo '{}' | ./hlm hook; echo "exit=$?"` → PASS, `exit=0`.
+- [ ] **Step 5: Manual smoke** — `HLM_PORT=17777 HLM_DATA_DIR=$(mktemp -d) ./hlm step "hello"` then `curl -s localhost:17777/v1/sessions` shows a session with `step_text":"hello"` (auto-spawned). Kill: `kill $(cat $HLM_DATA_DIR/hlm.pid)`.
 - [ ] **Step 6: Commit** — `git add internal/cli && git commit -m "feat(cli): reporting verbs, hook, statusline, serve and open"`
 
 ---
 
-### Task 10: claudecfg + `trk init`
+### Task 10: claudecfg + `hlm init`
 
 **Files:**
 - Create: `internal/claudecfg/ojson.go`, `internal/claudecfg/merge.go`, `internal/claudecfg/init.go`
@@ -4596,22 +4596,22 @@ Until Task 10 lands, add a temporary `func initCmd(args []string, stdin io.Reade
 **Interfaces:**
 - Produces:
   - `type Object` (ordered JSON object): `NewObject()`, `Get(k) (any, bool)`, `Set(k, v)`, `Keys() []string`, `Parse([]byte) (*Object, error)`, `(*Object) Marshal() ([]byte, error)` (2-space indent, trailing newline, no HTML escaping, numbers kept as `json.Number`).
-  - `MergeHooks(root *Object, trkCmd string) (changed bool, err error)`
-  - `type StatusAction string` with `StatusAdded|StatusPresent|StatusChained|StatusKept`; `MergeStatusLine(root *Object, trkCmd string, chain bool) (StatusAction, error)`; `ExistingStatusCommand(root *Object) string`
+  - `MergeHooks(root *Object, hlmCmd string) (changed bool, err error)`
+  - `type StatusAction string` with `StatusAdded|StatusPresent|StatusChained|StatusKept`; `MergeStatusLine(root *Object, hlmCmd string, chain bool) (StatusAction, error)`; `ExistingStatusCommand(root *Object) string`
   - `BlockBegin`, `BlockEnd`, `Snippet` (spec §5.3 text verbatim), `ApplyBlock(existing string) string`
   - `ShellQuote(s string) string`
   - `type Paths struct{ Settings, ClaudeMD string }`, `DefaultPaths() (Paths, error)` (honours `CLAUDE_CONFIG_DIR`)
-  - `type InitOptions struct{ Paths Paths; TrkCmd string; ChainStatus func(existing string) bool; SkipStatusLine, SkipClaudeMD, DryRun bool; Now time.Time }`
+  - `type InitOptions struct{ Paths Paths; HlmCmd string; ChainStatus func(existing string) bool; SkipStatusLine, SkipClaudeMD, DryRun bool; Now time.Time }`
   - `type InitResult struct{ HooksChanged bool; Status StatusAction; ExistingStatus, SettingsBackup string; ClaudeMDChanged bool; ClaudeMDBackup string }`
   - `Init(InitOptions) (InitResult, error)`
 
 Rules:
-- Each hook entry: `{"hooks":[{"type":"command","command":"<trk> hook","async":true,"timeout":10}]}` (no matcher = all). Existing trk hook (regex `(^|[\s/\\"'])trk(\.exe)?["']?\s+hook(\s|$)`) → skipped; if its command differs from the current `<trk> hook`, update it in place.
+- Each hook entry: `{"hooks":[{"type":"command","command":"<hlm> hook","async":true,"timeout":10}]}` (no matcher = all). Existing hlm hook (regex `(^|[\s/\\"'])hlm(\.exe)?["']?\s+hook(\s|$)`) → skipped; if its command differs from the current `<hlm> hook`, update it in place.
 - `hooks` not an object, or `hooks.<Event>` not an array → error, nothing written.
-- Status line: absent → `{"type":"command","command":"<trk> statusline"}`; already trk → present; other command + chain → `<trk> statusline --then '<orig>'` keeping every other key (`padding`, `refreshInterval`); declined → kept.
-- Backups: `<file>.trk-backup-YYYYMMDD-HHMMSS`, only when we're about to write and the file existed. Atomic write: temp file in the target dir + rename; resolve symlinks first (write the target, keep the link); preserve file mode.
+- Status line: absent → `{"type":"command","command":"<hlm> statusline"}`; already hlm → present; other command + chain → `<hlm> statusline --then '<orig>'` keeping every other key (`padding`, `refreshInterval`); declined → kept.
+- Backups: `<file>.hlm-backup-YYYYMMDD-HHMMSS`, only when we're about to write and the file existed. Atomic write: temp file in the target dir + rename; resolve symlinks first (write the target, keep the link); preserve file mode.
 - Invalid JSON → error, no write. Empty file → treated as `{}`.
-- `trkCmd`: if `exec.LookPath("trk")` is the same file as `os.Executable()`, use that **absolute** LookPath path (stable across brew upgrades); else the executable path; forward slashes; `ShellQuote` when it contains spaces or quotes.
+- `hlmCmd`: if `exec.LookPath("hlm")` is the same file as `os.Executable()`, use that **absolute** LookPath path (stable across brew upgrades); else the executable path; forward slashes; `ShellQuote` when it contains spaces or quotes.
 - CLI flags: `--yes` (chain without asking), `--no-statusline`, `--no-claude-md`, `--claude-md PATH`, `--dry-run`. Interactive prompt only when stdin is a TTY; otherwise keep the existing status line and print the `--yes` hint. After writing: start the daemon (`EnsureDaemon(3s)`) and print `Dashboard: http://localhost:7777` and "restart running Claude Code sessions to load the hooks".
 
 - [ ] **Step 1: Failing tests**
@@ -4665,7 +4665,7 @@ import (
 	"testing"
 )
 
-const trk = "/home/u/.local/bin/trk"
+const hlm = "/home/u/.local/bin/hlm"
 
 func mustParse(t *testing.T, s string) *Object {
 	t.Helper()
@@ -4684,25 +4684,25 @@ func TestMergeHooks(t *testing.T) {
 		check       func(t *testing.T, out string)
 	}{
 		{"empty settings", `{}`, true, false, func(t *testing.T, out string) {
-			if strings.Count(out, trk+" hook") != 11 || !strings.Contains(out, `"async": true`) {
+			if strings.Count(out, hlm+" hook") != 11 || !strings.Contains(out, `"async": true`) {
 				t.Fatalf("out = %s", out)
 			}
 		}},
 		{"keeps user hooks and appends", `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"caveman.sh"}]}]}}`, true, false, func(t *testing.T, out string) {
-			if !strings.Contains(out, "caveman.sh") || strings.Index(out, "caveman.sh") > strings.Index(out, trk+" hook") {
+			if !strings.Contains(out, "caveman.sh") || strings.Index(out, "caveman.sh") > strings.Index(out, hlm+" hook") {
 				t.Fatalf("user hook lost or reordered: %s", out)
 			}
 		}},
 		{"idempotent", "", false, false, nil}, // filled below from a merged result
-		{"stale trk path updated", `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/old/bin/trk hook"}]}]}}`, true, false, func(t *testing.T, out string) {
-			if strings.Contains(out, "/old/bin/trk") || strings.Count(out, trk+" hook") != 11 {
+		{"stale hlm path updated", `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/old/bin/hlm hook"}]}]}}`, true, false, func(t *testing.T, out string) {
+			if strings.Contains(out, "/old/bin/hlm") || strings.Count(out, hlm+" hook") != 11 {
 				t.Fatalf("out = %s", out)
 			}
 		}},
 		{"hooks not object", `{"hooks":[1]}`, false, true, nil},
 		{"event not array", `{"hooks":{"Stop":{"x":1}}}`, false, true, nil},
-		{"trkfoo is not trk", `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"trkfoo hook"}]}]}}`, true, false, func(t *testing.T, out string) {
-			if !strings.Contains(out, "trkfoo hook") || strings.Count(out, trk+" hook") != 11 {
+		{"trkfoo is not hlm", `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"trkfoo hook"}]}]}}`, true, false, func(t *testing.T, out string) {
+			if !strings.Contains(out, "trkfoo hook") || strings.Count(out, hlm+" hook") != 11 {
 				t.Fatalf("out = %s", out)
 			}
 		}},
@@ -4712,12 +4712,12 @@ func TestMergeHooks(t *testing.T) {
 			in := c.in
 			if c.name == "idempotent" {
 				o := mustParse(t, `{}`)
-				MergeHooks(o, trk)
+				MergeHooks(o, hlm)
 				b, _ := o.Marshal()
 				in = string(b)
 			}
 			o := mustParse(t, in)
-			changed, err := MergeHooks(o, trk)
+			changed, err := MergeHooks(o, hlm)
 			if (err != nil) != c.wantErr || changed != c.wantChanged {
 				t.Fatalf("changed=%v err=%v", changed, err)
 			}
@@ -4736,16 +4736,16 @@ func TestMergeStatusLine(t *testing.T) {
 		want     StatusAction
 		contains string
 	}{
-		{"absent", `{}`, false, StatusAdded, `"command": "` + trk + ` statusline"`},
-		{"already trk", `{"statusLine":{"type":"command","command":"trk statusline --then 'x'"}}`, true, StatusPresent, "--then 'x'"},
-		{"chain keeps other keys", `{"statusLine":{"type":"command","command":"ccstatusline","padding":0,"refreshInterval":10}}`, true, StatusChained, `"command": "` + trk + ` statusline --then 'ccstatusline'",` + "\n" + `    "padding": 0,` + "\n" + `    "refreshInterval": 10`},
+		{"absent", `{}`, false, StatusAdded, `"command": "` + hlm + ` statusline"`},
+		{"already hlm", `{"statusLine":{"type":"command","command":"hlm statusline --then 'x'"}}`, true, StatusPresent, "--then 'x'"},
+		{"chain keeps other keys", `{"statusLine":{"type":"command","command":"ccstatusline","padding":0,"refreshInterval":10}}`, true, StatusChained, `"command": "` + hlm + ` statusline --then 'ccstatusline'",` + "\n" + `    "padding": 0,` + "\n" + `    "refreshInterval": 10`},
 		{"declined", `{"statusLine":{"type":"command","command":"ccstatusline"}}`, false, StatusKept, `"command": "ccstatusline"`},
 		{"quotes escaped", `{"statusLine":{"type":"command","command":"jq -r '.model'"}}`, true, StatusChained, `--then 'jq -r '\\''.model'\\'''`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			o := mustParse(t, c.in)
-			got, err := MergeStatusLine(o, trk, c.chain)
+			got, err := MergeStatusLine(o, hlm, c.chain)
 			b, _ := o.Marshal()
 			if err != nil || got != c.want || !strings.Contains(string(b), c.contains) {
 				t.Fatalf("action=%s err=%v out=%s", got, err, b)
@@ -4799,11 +4799,11 @@ func paths(t *testing.T) Paths {
 }
 
 func opts(p Paths, chain bool) InitOptions {
-	return InitOptions{Paths: p, TrkCmd: trk, ChainStatus: func(string) bool { return chain }, Now: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)}
+	return InitOptions{Paths: p, HlmCmd: hlm, ChainStatus: func(string) bool { return chain }, Now: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)}
 }
 
 func backups(t *testing.T, p string) []string {
-	m, _ := filepath.Glob(p + ".trk-backup-*")
+	m, _ := filepath.Glob(p + ".hlm-backup-*")
 	return m
 }
 
@@ -4815,7 +4815,7 @@ func TestInitFreshMachine(t *testing.T) {
 	}
 	b, _ := os.ReadFile(p.Settings)
 	md, _ := os.ReadFile(p.ClaudeMD)
-	if !strings.Contains(string(b), trk+" hook") || string(md) != Snippet {
+	if !strings.Contains(string(b), hlm+" hook") || string(md) != Snippet {
 		t.Fatalf("settings=%s md=%q", b, md)
 	}
 }
@@ -4829,7 +4829,7 @@ func TestInitExistingThenIdempotent(t *testing.T) {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 	orig, _ := os.ReadFile(res.SettingsBackup)
-	if !strings.Contains(string(orig), `"ccstatusline"`) || strings.Contains(string(orig), "trk") {
+	if !strings.Contains(string(orig), `"ccstatusline"`) || strings.Contains(string(orig), "hlm") {
 		t.Fatal("backup is not the original")
 	}
 	if st, _ := os.Stat(p.Settings); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
@@ -4889,7 +4889,7 @@ func TestInitFollowsSymlink(t *testing.T) {
 		t.Fatal("symlink replaced by a file")
 	}
 	b, _ := os.ReadFile(target)
-	if !strings.Contains(string(b), "trk") {
+	if !strings.Contains(string(b), "hlm") {
 		t.Fatal("target not updated")
 	}
 }
@@ -5074,15 +5074,15 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 var (
-	trkHookRe   = regexp.MustCompile(`(?:^|[\s/\\"'])trk(?:\.exe)?["']?\s+hook(?:\s|$)`)
-	trkStatusRe = regexp.MustCompile(`(?:^|[\s/\\"'])trk(?:\.exe)?["']?\s+statusline(?:\s|$)`)
+	hlmHookRe   = regexp.MustCompile(`(?:^|[\s/\\"'])hlm(?:\.exe)?["']?\s+hook(?:\s|$)`)
+	hlmStatusRe = regexp.MustCompile(`(?:^|[\s/\\"'])hlm(?:\.exe)?["']?\s+statusline(?:\s|$)`)
 )
 
-func MergeHooks(root *Object, trkCmd string) (bool, error) {
+func MergeHooks(root *Object, hlmCmd string) (bool, error) {
 	var hooks *Object
 	switch v, ok := root.Get("hooks"); {
 	case !ok || v == nil:
@@ -5095,7 +5095,7 @@ func MergeHooks(root *Object, trkCmd string) (bool, error) {
 		}
 		hooks = h
 	}
-	want := trkCmd + " hook"
+	want := hlmCmd + " hook"
 	changed := false
 	for _, ev := range model.HookEvents {
 		var groups []any
@@ -5106,7 +5106,7 @@ func MergeHooks(root *Object, trkCmd string) (bool, error) {
 			}
 			groups = arr
 		}
-		found, updated := updateTrkHook(groups, want)
+		found, updated := updateHlmHook(groups, want)
 		changed = changed || updated
 		if found {
 			continue
@@ -5124,7 +5124,7 @@ func MergeHooks(root *Object, trkCmd string) (bool, error) {
 	return changed, nil
 }
 
-func updateTrkHook(groups []any, want string) (found, updated bool) {
+func updateHlmHook(groups []any, want string) (found, updated bool) {
 	for _, g := range groups {
 		gObj, ok := g.(*Object)
 		if !ok {
@@ -5139,7 +5139,7 @@ func updateTrkHook(groups []any, want string) (found, updated bool) {
 			}
 			cv, _ := hObj.Get("command")
 			cmd, _ := cv.(string)
-			if !trkHookRe.MatchString(cmd) {
+			if !hlmHookRe.MatchString(cmd) {
 				continue
 			}
 			found = true
@@ -5172,12 +5172,12 @@ func ExistingStatusCommand(root *Object) string {
 	return cmd
 }
 
-func MergeStatusLine(root *Object, trkCmd string, chain bool) (StatusAction, error) {
+func MergeStatusLine(root *Object, hlmCmd string, chain bool) (StatusAction, error) {
 	v, ok := root.Get("statusLine")
 	if !ok || v == nil {
 		sl := NewObject()
 		sl.Set("type", "command")
-		sl.Set("command", trkCmd+" statusline")
+		sl.Set("command", hlmCmd+" statusline")
 		root.Set("statusLine", sl)
 		return StatusAdded, nil
 	}
@@ -5186,26 +5186,26 @@ func MergeStatusLine(root *Object, trkCmd string, chain bool) (StatusAction, err
 		return StatusKept, nil
 	}
 	cmd := ExistingStatusCommand(root)
-	if trkStatusRe.MatchString(cmd) {
+	if hlmStatusRe.MatchString(cmd) {
 		return StatusPresent, nil
 	}
 	if cmd == "" || !chain {
 		return StatusKept, nil
 	}
-	sl.Set("command", trkCmd+" statusline --then "+ShellQuote(cmd))
+	sl.Set("command", hlmCmd+" statusline --then "+ShellQuote(cmd))
 	return StatusChained, nil
 }
 
 const (
-	BlockBegin = "<!-- trk:begin -->"
-	BlockEnd   = "<!-- trk:end -->"
+	BlockBegin = "<!-- hlm:begin -->"
+	BlockEnd   = "<!-- hlm:end -->"
 	Snippet    = BlockBegin + `
 ## Progress reporting
-Report progress with the ` + "`trk`" + ` CLI (it never fails; don't check its output):
-- At the start of a task: ` + "`trk start \"<task>\" --steps <N>`" + `
-- When moving to a new step: ` + "`trk step \"<what you're doing>\"`" + ` and ` + "`trk progress <i>/<N>`" + `
-- When you need a human decision: ` + "`trk blocked \"<question>\"`" + `
-- When finished: ` + "`trk done \"<one-line result>\"`" + `
+Report progress with the ` + "`hlm`" + ` CLI (it never fails; don't check its output):
+- At the start of a task: ` + "`hlm start \"<task>\" --steps <N>`" + `
+- When moving to a new step: ` + "`hlm step \"<what you're doing>\"`" + ` and ` + "`hlm progress <i>/<N>`" + `
+- When you need a human decision: ` + "`hlm blocked \"<question>\"`" + `
+- When finished: ` + "`hlm done \"<one-line result>\"`" + `
 ` + BlockEnd + "\n"
 )
 
@@ -5252,7 +5252,7 @@ func DefaultPaths() (Paths, error) {
 
 type InitOptions struct {
 	Paths          Paths
-	TrkCmd         string
+	HlmCmd         string
 	ChainStatus    func(existing string) bool
 	SkipStatusLine bool
 	SkipClaudeMD   bool
@@ -5280,16 +5280,16 @@ func Init(o InitOptions) (InitResult, error) {
 	if err != nil {
 		return res, errors.New(o.Paths.Settings + ": " + err.Error() + " (nothing was changed)")
 	}
-	if res.HooksChanged, err = MergeHooks(root, o.TrkCmd); err != nil {
+	if res.HooksChanged, err = MergeHooks(root, o.HlmCmd); err != nil {
 		return res, err
 	}
 	if !o.SkipStatusLine {
 		res.ExistingStatus = ExistingStatusCommand(root)
 		chain := false
-		if res.ExistingStatus != "" && !trkStatusRe.MatchString(res.ExistingStatus) && o.ChainStatus != nil {
+		if res.ExistingStatus != "" && !hlmStatusRe.MatchString(res.ExistingStatus) && o.ChainStatus != nil {
 			chain = o.ChainStatus(res.ExistingStatus)
 		}
-		if res.Status, err = MergeStatusLine(root, o.TrkCmd, chain); err != nil {
+		if res.Status, err = MergeStatusLine(root, o.HlmCmd, chain); err != nil {
 			return res, err
 		}
 	}
@@ -5331,7 +5331,7 @@ func Init(o InitOptions) (InitResult, error) {
 }
 
 func backup(path string, data []byte, now time.Time) (string, error) {
-	dst := path + ".trk-backup-" + now.Format("20060102-150405")
+	dst := path + ".hlm-backup-" + now.Format("20060102-150405")
 	return dst, os.WriteFile(dst, data, 0o600)
 }
 
@@ -5348,7 +5348,7 @@ func writeAtomic(path string, data []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".trk-*")
+	tmp, err := os.CreateTemp(dir, ".hlm-*")
 	if err != nil {
 		return err
 	}
@@ -5382,9 +5382,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/claudecfg"
-	"github.com/GujaLomsadze/trk/internal/client"
-	"github.com/GujaLomsadze/trk/internal/config"
+	"github.com/GujaLomsadze/helm/internal/claudecfg"
+	"github.com/GujaLomsadze/helm/internal/client"
+	"github.com/GujaLomsadze/helm/internal/config"
 )
 
 func initCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -5400,7 +5400,7 @@ func initCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	paths, err := claudecfg.DefaultPaths()
 	if err != nil {
-		fmt.Fprintf(stderr, "trk init: %v\n", err)
+		fmt.Fprintf(stderr, "hlm init: %v\n", err)
 		return 1
 	}
 	if *mdPath != "" {
@@ -5412,20 +5412,20 @@ func initCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return true
 		}
 		if !isTTY(stdin) {
-			fmt.Fprintf(stdout, "Kept your status line (%s). Re-run with --yes to chain it through trk.\n", existing)
+			fmt.Fprintf(stdout, "Kept your status line (%s). Re-run with --yes to chain it through hlm.\n", existing)
 			return false
 		}
-		fmt.Fprintf(stdout, "You already have a status line: %s\nChain it through trk? trk records the data, then shows your status line unchanged. [Y/n] ", existing)
+		fmt.Fprintf(stdout, "You already have a status line: %s\nChain it through hlm? hlm records the data, then shows your status line unchanged. [Y/n] ", existing)
 		line, _ := in.ReadString('\n')
 		a := strings.ToLower(strings.TrimSpace(line))
 		return a == "" || a == "y" || a == "yes"
 	}
 	res, err := claudecfg.Init(claudecfg.InitOptions{
-		Paths: paths, TrkCmd: trkCommand(), ChainStatus: chain,
+		Paths: paths, HlmCmd: hlmCommand(), ChainStatus: chain,
 		SkipStatusLine: *noStatus, SkipClaudeMD: *noMD, DryRun: *dry, Now: time.Now(),
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "trk init: %v\n", err)
+		fmt.Fprintf(stderr, "hlm init: %v\n", err)
 		return 1
 	}
 	prefix := ""
@@ -5433,17 +5433,17 @@ func initCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		prefix = "(dry run) would have: "
 	}
 	if res.HooksChanged {
-		fmt.Fprintf(stdout, "%sadded trk hooks to %s\n", prefix, paths.Settings)
+		fmt.Fprintf(stdout, "%sadded hlm hooks to %s\n", prefix, paths.Settings)
 	} else {
 		fmt.Fprintln(stdout, "hooks already set up")
 	}
 	switch res.Status {
 	case claudecfg.StatusAdded:
-		fmt.Fprintf(stdout, "%sset the status line to trk\n", prefix)
+		fmt.Fprintf(stdout, "%sset the status line to hlm\n", prefix)
 	case claudecfg.StatusChained:
-		fmt.Fprintf(stdout, "%schained your status line through trk\n", prefix)
+		fmt.Fprintf(stdout, "%schained your status line through hlm\n", prefix)
 	case claudecfg.StatusPresent:
-		fmt.Fprintln(stdout, "status line already goes through trk")
+		fmt.Fprintln(stdout, "status line already goes through hlm")
 	}
 	if res.SettingsBackup != "" {
 		fmt.Fprintf(stdout, "backup: %s\n", res.SettingsBackup)
@@ -5471,13 +5471,13 @@ func isTTY(r io.Reader) bool {
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }
 
-// trkCommand returns the command hooks should run: an absolute, stable path.
-func trkCommand() string {
+// hlmCommand returns the command hooks should run: an absolute, stable path.
+func hlmCommand() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return "trk"
+		return "hlm"
 	}
-	if lp, err := exec.LookPath("trk"); err == nil {
+	if lp, err := exec.LookPath("hlm"); err == nil {
 		if a, e1 := os.Stat(lp); e1 == nil {
 			if b, e2 := os.Stat(exe); e2 == nil && os.SameFile(a, b) {
 				if abs, err := filepath.Abs(lp); err == nil {
@@ -5495,7 +5495,7 @@ func trkCommand() string {
 ```
 
 - [ ] **Step 4: Run** — `go test ./internal/claudecfg ./internal/cli -v` → PASS.
-- [ ] **Step 5: Sandbox check (never touch the real `~/.claude` here)** — `CLAUDE_CONFIG_DIR=$(mktemp -d) TRK_PORT=17777 TRK_DATA_DIR=$(mktemp -d) ./trk init --yes` → prints the summary; inspect the generated settings.json.
+- [ ] **Step 5: Sandbox check (never touch the real `~/.claude` here)** — `CLAUDE_CONFIG_DIR=$(mktemp -d) HLM_PORT=17777 HLM_DATA_DIR=$(mktemp -d) ./hlm init --yes` → prints the summary; inspect the generated settings.json.
 - [ ] **Step 6: Commit** — `git add internal/claudecfg internal/cli && git commit -m "feat(init): safe settings.json merge, status line chaining, CLAUDE.md block"`
 
 ---
@@ -5511,7 +5511,7 @@ func trkCommand() string {
 - Consumes: SSE `snapshot` = `fleet.View` JSON (fields: `now, sessions[], needs[], collisions[], account, stats`; session fields from `model.Session` + `loop, reality, recent[{tool,summary,state}], timeline[{start,end,cat}], attention, need, ctx{level,hints[]}`).
 - Produces: embedded UI.
 
-Layout per spec §7.1: header (title `TRK.EXE`, subtitle `fleet monitor · localhost:7777`, stats, 5h/7d ASCII bars with reset countdowns, nav Fleet/Timeline/Orbit with the last two disabled) → main grid (cards, ~2/3) + right column (Needs you, Collisions) → bottom "Last 30 minutes" swimlane (1800 px for 30 min, horizontal scroll, lane label sticky, ticks every 5 min, scrolled to "now" on first render).
+Layout per spec §7.1: header (title `HELM.EXE`, subtitle `fleet monitor · localhost:7777`, stats, 5h/7d ASCII bars with reset countdowns, nav Fleet/Timeline/Orbit with the last two disabled) → main grid (cards, ~2/3) + right column (Needs you, Collisions) → bottom "Last 30 minutes" swimlane (1800 px for 30 min, horizontal scroll, lane label sticky, ticks every 5 min, scrolled to "now" on first render).
 
 Card: name + chip; `repo · branch`; task (or muted "no task declared"); `step i/N · text`; 20-cell ASCII bar toned by status; reality box (amber) when `reality`; last 3 tools `› Tool summary ✓/✗/…`; **context gauge** `ctx 42% of 200K` + 10-cell bar, coloured by `ctx.level` (`ok` muted, `yellow` warn, `red` accent with glow), and each `ctx.hints[]` line below it prefixed `▲` in the band colour; footer elapsed · tokens · cost. `attention` → hot border.
 
@@ -5552,7 +5552,7 @@ func TestAssetsEmbedded(t *testing.T) {
 		}
 	}
 	idx, _ := fs.ReadFile(FS, "index.html")
-	for _, ref := range []string{"theme.css", "app.js", "TRK.EXE"} {
+	for _, ref := range []string{"theme.css", "app.js", "HELM.EXE"} {
 		if !strings.Contains(string(idx), ref) {
 			t.Errorf("index.html lacks %s", ref)
 		}
@@ -5588,13 +5588,13 @@ func TestThemeTokens(t *testing.T) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TRK.EXE</title>
+<title>HELM.EXE</title>
 <link rel="stylesheet" href="theme.css">
 </head>
 <body>
 <header class="hdr panel">
   <div class="brand">
-    <h1 class="title">TRK.EXE</h1>
+    <h1 class="title">HELM.EXE</h1>
     <div class="sub">fleet monitor · <span id="host"></span> <span id="conn" class="conn">○ connecting</span></div>
   </div>
   <div class="stats" id="stats"></div>
@@ -5762,7 +5762,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 `web/app.js`:
 ```js
 "use strict";
-// TRK dashboard. Builds DOM with createElement/textContent only: agent text is untrusted.
+// Helm dashboard. Builds DOM with createElement/textContent only: agent text is untrusted.
 
 let view = null;
 let skew = 0; // server clock - local clock
@@ -5875,7 +5875,7 @@ function card(s) {
 function renderGrid(v) {
   $("grid").replaceChildren(...(v.sessions.length
     ? v.sessions.map(card)
-    : [h("div", { class: "panel empty" }, "No agents yet. Start Claude Code (after `trk init`) or run `trk start \"task\"`.")]));
+    : [h("div", { class: "panel empty" }, "No agents yet. Start Claude Code (after `hlm init`) or run `hlm start \"task\"`.")]));
 }
 
 function renderSide(v) {
@@ -5946,9 +5946,9 @@ setInterval(render, 1000);
 `scripts/seed-demo.sh` (demo data for screenshots; posts straight to the API):
 ```sh
 #!/usr/bin/env sh
-# Seed a running daemon with a believable fleet. Usage: TRK_PORT=17777 sh scripts/seed-demo.sh
+# Seed a running daemon with a believable fleet. Usage: HLM_PORT=17777 sh scripts/seed-demo.sh
 set -eu
-U="http://127.0.0.1:${TRK_PORT:-7777}/v1/events"
+U="http://127.0.0.1:${HLM_PORT:-7777}/v1/events"
 p() { curl -fsS -o /dev/null -H 'Content-Type: application/json' -d "$1" "$U"; }
 hook() { p "{\"source\":\"hook\",\"payload\":{\"session_id\":\"$1\",\"cwd\":\"$2\",\"hook_event_name\":\"$3\"$4}}"; }
 cli() { p "{\"source\":\"cli\",\"kind\":\"$2\",\"session_id\":\"$1\",\"session_via\":\"env\",\"payload\":$3}"; }
@@ -5978,7 +5978,7 @@ echo seeded
 ```
 
 - [ ] **Step 5: Run** — `go test ./web ./internal/daemon && (command -v node >/dev/null && node --check web/app.js)` → PASS.
-- [ ] **Step 6: Visual check** — `go build -o trk ./cmd/trk && TRK_PORT=17777 TRK_DATA_DIR=$(mktemp -d) ./trk serve &` then `TRK_PORT=17777 sh scripts/seed-demo.sh`; open `http://localhost:17777` with Playwright at 1440×900 and 400×800, take screenshots, and check: kafka card shows LOOPING? + reality "Bash `pytest …` failed 6×" + yellow ctx with the handoff hint; api card shows WAITING ON YOU, red ctx with **both** hints, and an inbox item `terraform apply -auto-approve`; docs is BLOCKED; collisions lists `/src/shared/limits.go` api ↔ docs; 5h 23% / 7d 61% bars with countdowns; no horizontal page scroll at 400 px; scanlines visible; no console errors. Fix anything off, then kill the daemon.
+- [ ] **Step 6: Visual check** — `go build -o hlm ./cmd/hlm && HLM_PORT=17777 HLM_DATA_DIR=$(mktemp -d) ./hlm serve &` then `HLM_PORT=17777 sh scripts/seed-demo.sh`; open `http://localhost:17777` with Playwright at 1440×900 and 400×800, take screenshots, and check: kafka card shows LOOPING? + reality "Bash `pytest …` failed 6×" + yellow ctx with the handoff hint; api card shows WAITING ON YOU, red ctx with **both** hints, and an inbox item `terraform apply -auto-approve`; docs is BLOCKED; collisions lists `/src/shared/limits.go` api ↔ docs; 5h 23% / 7d 61% bars with countdowns; no horizontal page scroll at 400 px; scanlines visible; no console errors. Fix anything off, then kill the daemon.
 - [ ] **Step 7: Commit** — `git add web scripts && git commit -m "feat(web): phosphor fleet dashboard with context bands"`
 
 ---
@@ -5989,9 +5989,9 @@ echo seeded
 - Create: `e2e/e2e_test.go` (`//go:build e2e && (linux || darwin)`)
 
 **Interfaces:**
-- Consumes: the built `trk` binary only (black box).
+- Consumes: the built `hlm` binary only (black box).
 
-Covers spec §11 locally: auto-spawn without `trk serve`; permission → WAITING ON YOU within 1 s; two concurrent fake-Claude sessions get correct CLI attribution via the process tree; killing the daemon mid-session → calls still exit 0 fast, next call respawns; status line with null fields prints dashes.
+Covers spec §11 locally: auto-spawn without `hlm serve`; permission → WAITING ON YOU within 1 s; two concurrent fake-Claude sessions get correct CLI attribution via the process tree; killing the daemon mid-session → calls still exit 0 fast, next call respawns; status line with null fields prints dashes.
 
 - [ ] **Step 1: Write the test**
 
@@ -6024,15 +6024,15 @@ type harness struct {
 
 func setup(t *testing.T) *harness {
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "trk")
-	if out, err := exec.Command("go", "build", "-o", bin, "../cmd/trk").CombinedOutput(); err != nil {
+	bin := filepath.Join(dir, "hlm")
+	if out, err := exec.Command("go", "build", "-o", bin, "../cmd/hlm").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
 	l, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
 	l.Close()
 	h := &harness{t: t, bin: bin, data: filepath.Join(dir, "data"), port: port}
-	h.env = append(os.Environ(), "TRK_PORT="+port, "TRK_DATA_DIR="+h.data, "TRK_URL=", "TRK_SESSION=", "TRK_NO_SPAWN=")
+	h.env = append(os.Environ(), "HLM_PORT="+port, "HLM_DATA_DIR="+h.data, "HLM_URL=", "HLM_SESSION=", "HLM_NO_SPAWN=")
 	t.Cleanup(h.killDaemon)
 	return h
 }
@@ -6096,7 +6096,7 @@ func (h *harness) waitFor(what string, within time.Duration, ok func() bool) {
 }
 
 func (h *harness) killDaemon() {
-	b, err := os.ReadFile(filepath.Join(h.data, "trk.pid"))
+	b, err := os.ReadFile(filepath.Join(h.data, "hlm.pid"))
 	if err != nil {
 		return
 	}
@@ -6112,7 +6112,7 @@ func hookJSON(sid, event, cwd, extra string) string {
 func TestAcceptance(t *testing.T) {
 	h := setup(t)
 
-	// 1. Auto-spawn: no `trk serve`, a hook call brings the daemon up.
+	// 1. Auto-spawn: no `hlm serve`, a hook call brings the daemon up.
 	code, out, _ := h.run(hookJSON("A", "SessionStart", "/w/a", ""), "hook")
 	if code != 0 || out != "" {
 		t.Fatalf("hook: code=%d out=%q", code, out)
@@ -6144,16 +6144,16 @@ func TestAcceptance(t *testing.T) {
 
 	// 5. Status line with null fields.
 	code, out, took = h.run(`{"session_id":"A","context_window":{"used_percentage":null}}`, "statusline")
-	if code != 0 || strings.TrimSpace(out) != "trk · ctx — · 5h — · 7d —" || took > time.Second {
+	if code != 0 || strings.TrimSpace(out) != "hlm · ctx — · 5h — · 7d —" || took > time.Second {
 		t.Fatalf("statusline: code=%d out=%q took=%v", code, out, took)
 	}
 
-	// 6. TRK_URL pointing nowhere: no spawn, exit 0, quick.
+	// 6. HLM_URL pointing nowhere: no spawn, exit 0, quick.
 	cmd := exec.Command(h.bin, "step", "x")
-	cmd.Env = append(h.env, "TRK_URL=http://127.0.0.1:1")
+	cmd.Env = append(h.env, "HLM_URL=http://127.0.0.1:1")
 	t0 := time.Now()
 	if err := cmd.Run(); err != nil || time.Since(t0) > 500*time.Millisecond {
-		t.Fatalf("TRK_URL down: err=%v took=%v", err, time.Since(t0))
+		t.Fatalf("HLM_URL down: err=%v took=%v", err, time.Since(t0))
 	}
 	_ = io.Discard
 }
@@ -6174,23 +6174,23 @@ func TestAcceptance(t *testing.T) {
 - [ ] **Step 1: `.goreleaser.yaml`**
 ```yaml
 version: 2
-project_name: trk
+project_name: hlm
 before:
   hooks:
     - go mod tidy
     - go test ./...
 builds:
-  - id: trk
-    main: ./cmd/trk
-    binary: trk
+  - id: hlm
+    main: ./cmd/hlm
+    binary: hlm
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
-      - -s -w -X github.com/GujaLomsadze/trk/internal/version.Version={{ .Version }}
+      - -s -w -X github.com/GujaLomsadze/helm/internal/version.Version={{ .Version }}
 archives:
-  - name_template: "trk_{{ .Os }}_{{ .Arch }}"   # version-less so releases/latest/download/<name> works
+  - name_template: "hlm_{{ .Os }}_{{ .Arch }}"   # version-less so releases/latest/download/<name> works
     formats: [tar.gz]
     format_overrides:
       - goos: windows
@@ -6200,49 +6200,49 @@ checksum:
 changelog:
   use: github
 homebrew_casks:
-  - name: trk
+  - name: hlm
     repository:
       owner: GujaLomsadze
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    homepage: https://github.com/GujaLomsadze/trk
+    homepage: https://github.com/GujaLomsadze/helm
     description: Live tracker for coding agents
     skip_upload: auto
 scoops:
-  - name: trk
+  - name: hlm
     repository:
       owner: GujaLomsadze
       name: scoop-bucket
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    homepage: https://github.com/GujaLomsadze/trk
+    homepage: https://github.com/GujaLomsadze/helm
     description: Live tracker for coding agents
     skip_upload: auto
 ```
-Run `go run github.com/goreleaser/goreleaser/v2@latest check`; if a key is deprecated or renamed in the current version, follow its message. Then `go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish` → 6 archives in `dist/`; check `ls -la dist/*/trk*` sizes (target 10–15 MB) and `file dist/trk_linux_arm64*/trk` says statically linked.
+Run `go run github.com/goreleaser/goreleaser/v2@latest check`; if a key is deprecated or renamed in the current version, follow its message. Then `go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean --skip=publish` → 6 archives in `dist/`; check `ls -la dist/*/hlm*` sizes (target 10–15 MB) and `file dist/hlm_linux_arm64*/hlm` says statically linked.
 
 - [ ] **Step 2: `install.sh`**
 ```sh
 #!/bin/sh
-# trk installer: curl -fsSL https://raw.githubusercontent.com/GujaLomsadze/trk/main/install.sh | sh
+# hlm installer: curl -fsSL https://raw.githubusercontent.com/GujaLomsadze/helm/main/install.sh | sh
 set -eu
-REPO="GujaLomsadze/trk"
-DIR="${TRK_INSTALL_DIR:-$HOME/.local/bin}"
+REPO="GujaLomsadze/helm"
+DIR="${HLM_INSTALL_DIR:-$HOME/.local/bin}"
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$os" in
   linux|darwin) ;;
-  *) echo "trk: unsupported OS '$os' (on Windows use Scoop or the .zip from GitHub Releases)" >&2; exit 1 ;;
+  *) echo "hlm: unsupported OS '$os' (on Windows use Scoop or the .zip from GitHub Releases)" >&2; exit 1 ;;
 esac
 arch=$(uname -m)
 case "$arch" in
   x86_64|amd64) arch=amd64 ;;
   arm64|aarch64) arch=arm64 ;;
-  *) echo "trk: unsupported architecture '$arch'" >&2; exit 1 ;;
+  *) echo "hlm: unsupported architecture '$arch'" >&2; exit 1 ;;
 esac
 
-asset="trk_${os}_${arch}.tar.gz"
+asset="hlm_${os}_${arch}.tar.gz"
 base="https://github.com/$REPO/releases/latest/download"
-[ -n "${TRK_VERSION:-}" ] && base="https://github.com/$REPO/releases/download/$TRK_VERSION"
+[ -n "${HLM_VERSION:-}" ] && base="https://github.com/$REPO/releases/download/$HLM_VERSION"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -6256,20 +6256,20 @@ else
   got=$(shasum -a 256 "$tmp/$asset" | cut -d' ' -f1)
 fi
 if [ -z "$want" ] || [ "$want" != "$got" ]; then
-  echo "trk: checksum mismatch for $asset" >&2
+  echo "hlm: checksum mismatch for $asset" >&2
   exit 1
 fi
-tar -xzf "$tmp/$asset" -C "$tmp" trk
+tar -xzf "$tmp/$asset" -C "$tmp" hlm
 mkdir -p "$DIR"
-install -m 0755 "$tmp/trk" "$DIR/trk"
-echo "trk installed to $DIR/trk"
+install -m 0755 "$tmp/hlm" "$DIR/hlm"
+echo "hlm installed to $DIR/hlm"
 case ":$PATH:" in
   *":$DIR:"*) ;;
   *) echo "note: $DIR is not on your PATH; add it to your shell profile" ;;
 esac
-echo "next: trk init"
+echo "next: hlm init"
 ```
-Verify: `sh -n install.sh` and, if available, `shellcheck install.sh`. Dry test against the snapshot: serve `dist/` with `python3 -m http.server` and temporarily point `base` at it via `TRK_VERSION`-style override — or at minimum run the checksum/extract part by hand on `dist/trk_linux_amd64.tar.gz`.
+Verify: `sh -n install.sh` and, if available, `shellcheck install.sh`. Dry test against the snapshot: serve `dist/` with `python3 -m http.server` and temporarily point `base` at it via `HLM_VERSION`-style override — or at minimum run the checksum/extract part by hand on `dist/hlm_linux_amd64.tar.gz`.
 
 - [ ] **Step 3: CI workflows**
 
@@ -6324,7 +6324,7 @@ jobs:
 ```
 (Check the latest major versions of the three actions at execution time.)
 
-- [ ] **Step 4: `README.md`** — sections: what it is (one paragraph from spec §1–2), install (install.sh, brew, scoop, `go install github.com/GujaLomsadze/trk/cmd/trk@latest`), quick start (`trk init` → start Claude Code → `trk open`), agent verbs table, config env vars, context bands (40/50/60/70 with the two hints), WSL note (spec §8), what `trk init` changes + backups + how to undo (restore the `.trk-backup-*` file), license placeholder line only if Guja has picked one.
+- [ ] **Step 4: `README.md`** — sections: what it is (one paragraph from spec §1–2), install (install.sh, brew, scoop, `go install github.com/GujaLomsadze/helm/cmd/hlm@latest`), quick start (`hlm init` → start Claude Code → `hlm open`), agent verbs table, config env vars, context bands (40/50/60/70 with the two hints), WSL note (spec §8), what `hlm init` changes + backups + how to undo (restore the `.hlm-backup-*` file), license placeholder line only if Guja has picked one.
 
 - [ ] **Step 5: Commit** — `git add .goreleaser.yaml install.sh .github README.md && git commit -m "build: goreleaser, installer, ci and readme"`
 
@@ -6333,9 +6333,9 @@ jobs:
 ### Task 14: Whole-branch verification and hand-off
 
 - [ ] **Step 1: Full suite** — `go vet ./... && go test -race ./... && go test -tags e2e -count=1 ./e2e/...` → all PASS. Paste the summary lines.
-- [ ] **Step 2: Cross-compile** — `for t in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64 windows/arm64; do GOOS=${t%/*} GOARCH=${t#*/} CGO_ENABLED=0 go build -o /dev/null ./cmd/trk || exit 1; done` → no errors.
+- [ ] **Step 2: Cross-compile** — `for t in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64 windows/arm64; do GOOS=${t%/*} GOARCH=${t#*/} CGO_ENABLED=0 go build -o /dev/null ./cmd/hlm || exit 1; done` → no errors.
 - [ ] **Step 3: Spec acceptance walk-through (§11)** — tick each against evidence from the e2e test and the Task 11 screenshots. Items needing real hardware (macOS ARM, Windows x64) are verified by CI on first push — list them as "pending CI".
-- [ ] **Step 4: Real Claude Code check — ask Guja first.** Running `trk init` for real edits `~/.claude/settings.json` (currently has `ccstatusline` with `refreshInterval: 10`, and SessionStart/UserPromptSubmit hooks) and appends to `~/.claude/CLAUDE.md` (his global rules). Backups are written, but do not run it without his explicit go-ahead. With approval: `go install ./cmd/trk` (or copy to `~/.local/bin`), `trk init`, start a new Claude Code session, confirm the card appears, a permission prompt flips it to WAITING ON YOU, and the ctx gauge tracks.
+- [ ] **Step 4: Real Claude Code check — ask Guja first.** Running `hlm init` for real edits `~/.claude/settings.json` (currently has `ccstatusline` with `refreshInterval: 10`, and SessionStart/UserPromptSubmit hooks) and appends to `~/.claude/CLAUDE.md` (his global rules). Backups are written, but do not run it without his explicit go-ahead. With approval: `go install ./cmd/hlm` (or copy to `~/.local/bin`), `hlm init`, start a new Claude Code session, confirm the card appears, a permission prompt flips it to WAITING ON YOU, and the ctx gauge tracks.
 - [ ] **Step 5: Final review** — dispatch one reviewer (superpowers:requesting-code-review) over `main..m1`.
 - [ ] **Step 6: Hand-off** — do NOT push. Give Guja: branch name, commit list, and the exact commands he'd run (`git push -u origin m1`, `gh pr create ...`, tag `v0.1.0`), plus repos/secrets he must create for brew/scoop (`GujaLomsadze/homebrew-tap`, `GujaLomsadze/scoop-bucket`, `TAP_GITHUB_TOKEN`) and the open license choice.
 

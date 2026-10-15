@@ -1,5 +1,5 @@
 "use strict";
-// UI inventory (ui.html): renders TRK's components from fixtures with the real renderers in
+// UI inventory (ui.html): renders Helm's components from fixtures with the real renderers in
 // app.js, and lists every colour token with its contrast. Open /ui.html on a dev daemon after
 // a visual change; nothing links here from the dashboard.
 
@@ -85,16 +85,16 @@ function controls() {
 
 const T = Date.now(), M = 60e3;
 const FIXTURES = [
-  { agent: "claude", status: "working", name: "trk", task: "Agent adapters", step_text: "Writing tests", step_i: 5, step_n: 8, ctx_pct: 34, cost_usd: 1.84, tokens_in: 180e3, tokens_out: 32e3 },
-  { agent: "codex", status: "waiting", name: "trk #9f3a", task: "Fix flaky e2e", step_text: "Re-running on macOS", step_i: 2, step_n: 4, need: { type: "permission", text: "Bash: go test -tags e2e ./e2e/..." } },
+  { agent: "claude", status: "working", name: "hlm", task: "Agent adapters", step_text: "Writing tests", step_i: 5, step_n: 8, ctx_pct: 34, cost_usd: 1.84, tokens_in: 180e3, tokens_out: 32e3 },
+  { agent: "codex", status: "waiting", name: "hlm #9f3a", task: "Fix flaky e2e", step_text: "Re-running on macOS", step_i: 2, step_n: 4, need: { type: "permission", text: "Bash: go test -tags e2e ./e2e/..." } },
   { agent: "claude", status: "blocked", name: "arrow", task: "Port the reader", step_i: 3, step_n: 6, ctx_pct: 52, cost_usd: 4.1 },
   { agent: "codex", status: "looping", name: "vendor", reality: "Bash `npm test` failed 6× in 4 min", step_i: 1, step_n: 3 },
   { agent: "claude", status: "done", name: "docs", task: "README for agents", step_i: 4, step_n: 4, last_reply: "Updated the README and the architecture notes.", ctx_pct: 71, cost_usd: 0.92 },
-  { agent: "codex", status: "interrupted", name: "trk", task: "Bump xterm.js", step_i: 1, step_n: 2, last_reply: "" },
+  { agent: "codex", status: "interrupted", name: "hlm", task: "Bump xterm.js", step_i: 1, step_n: 2, last_reply: "" },
   { agent: "", status: "idle", name: "scripts", task: "Nightly backup", step_i: 0, step_n: 0 },
 ].map((s, i) => ({
   session_id: (s.agent ? s.agent + ":" : "") + "fixture-" + i, started_at: T - (40 - i * 5) * M, last_event_at: T - i * M,
-  last_prompt: "Make TRK a generic harness with clean adapter boundaries", last_prompt_at: T - 6 * M,
+  last_prompt: "Make Helm a generic harness with clean adapter boundaries", last_prompt_at: T - 6 * M,
   recent: [{ tool: s.agent === "codex" ? "apply_patch" : "Edit", summary: "internal/agent/codex/hook.go", state: "ok" }, { tool: "Bash", summary: "go test ./...", state: i % 3 ? "ok" : "fail" }],
   timeline: [{ start: T - 20 * M, end: T - 18 * M, cat: "read" }, { start: T - 17 * M, end: T - 12 * M, cat: "edit" }, { start: T - 11 * M, end: T - 9 * M, cat: "run" }, { start: T - 8 * M, end: T - 6 * M, cat: "wait" }],
   files_read: 6, files_edited: 3, lines_added: 240, lines_removed: 61, api_ms: 9 * M, wall_ms: 14 * M,

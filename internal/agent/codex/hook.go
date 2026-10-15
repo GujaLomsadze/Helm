@@ -1,5 +1,5 @@
 // Package codex is the OpenAI Codex adapter. It translates Codex's lifecycle hooks into
-// TRK's canonical schema, installs those hooks, launches `codex` in dashboard terminals
+// Helm's canonical schema, installs those hooks, launches `codex` in dashboard terminals
 // and reads the account's plan usage. It never reads transcripts or credentials and never
 // steers Codex: hooks get no decision back.
 package codex
@@ -12,11 +12,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
-// Events are the Codex hook events `trk init --agent codex` registers.
+// Events are the Codex hook events `hlm init --agent codex` registers.
 var Events = []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "Interrupt", "SessionEnd", "PreCompact", "PostCompact", "SubagentStart", "SubagentStop"}
 
 var hookKinds = map[string]string{

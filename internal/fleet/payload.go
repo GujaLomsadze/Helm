@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-// payload is the union of fields TRK reads from CLI, hook and status line JSON.
+// payload is the union of fields Helm reads from CLI, hook and status line JSON.
 // Everything is optional; unknown fields are ignored; type mismatches skip the field.
 type payload struct {
 	// CLI verbs
@@ -16,8 +16,8 @@ type payload struct {
 	N     int    `json:"n"`
 	// shared
 	SessionID  string          `json:"session_id"`
-	Background bool            `json:"trk_background"`
-	Defer      bool            `json:"trk_defer"`
+	Background bool            `json:"hlm_background"`
+	Defer      bool            `json:"hlm_defer"`
 	Cwd        string          `json:"cwd"`
 	Model      json.RawMessage `json:"model"` // string (SessionStart) or object (status line)
 	// hooks

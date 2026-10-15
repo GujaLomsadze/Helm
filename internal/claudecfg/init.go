@@ -24,7 +24,7 @@ func DefaultPaths() (Paths, error) {
 
 type InitOptions struct {
 	Paths          Paths
-	TrkCmd         string
+	HlmCmd         string
 	ChainStatus    func(existing string) bool
 	SkipStatusLine bool
 	SkipClaudeMD   bool
@@ -52,16 +52,16 @@ func Init(o InitOptions) (InitResult, error) {
 	if err != nil {
 		return res, errors.New(o.Paths.Settings + ": " + err.Error() + " (nothing was changed)")
 	}
-	if res.HooksChanged, err = MergeHooks(root, o.TrkCmd); err != nil {
+	if res.HooksChanged, err = MergeHooks(root, o.HlmCmd); err != nil {
 		return res, err
 	}
 	if !o.SkipStatusLine {
 		res.ExistingStatus = ExistingStatusCommand(root)
 		chain := false
-		if res.ExistingStatus != "" && !trkStatusRe.MatchString(res.ExistingStatus) && o.ChainStatus != nil {
+		if res.ExistingStatus != "" && !hlmStatusRe.MatchString(res.ExistingStatus) && o.ChainStatus != nil {
 			chain = o.ChainStatus(res.ExistingStatus)
 		}
-		if res.Status, err = MergeStatusLine(root, o.TrkCmd, chain); err != nil {
+		if res.Status, err = MergeStatusLine(root, o.HlmCmd, chain); err != nil {
 			return res, err
 		}
 	}

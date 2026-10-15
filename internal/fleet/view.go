@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	"github.com/GujaLomsadze/trk/internal/derive"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/derive"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 const (
@@ -36,7 +36,7 @@ type SessionView struct {
 	Recent    []CallView        `json:"recent"`
 	Timeline  []Block           `json:"timeline"`
 	Attention bool              `json:"attention"`
-	AutoName  string            `json:"auto_name,omitempty"` // the name TRK would show, when a title replaces it
+	AutoName  string            `json:"auto_name,omitempty"` // the name Helm would show, when a title replaces it
 	Need      *derive.Need      `json:"need,omitempty"`
 	Ctx       derive.CtxBand    `json:"ctx"`
 	Calls     []derive.ToolCall `json:"calls,omitempty"`

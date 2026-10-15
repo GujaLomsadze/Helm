@@ -1,4 +1,4 @@
-// Package daemon serves the TRK HTTP API, SSE stream and dashboard.
+// Package daemon serves the Helm HTTP API, SSE stream and dashboard.
 package daemon
 
 import (
@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	_ "github.com/GujaLomsadze/trk/internal/agent/all" // every adapter hooks can go through
+	_ "github.com/GujaLomsadze/helm/internal/agent/all" // every adapter hooks can go through
 	"log"
 	"net"
 	"net/http"
@@ -16,12 +16,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/fleet"
-	"github.com/GujaLomsadze/trk/internal/model"
-	"github.com/GujaLomsadze/trk/internal/store"
-	"github.com/GujaLomsadze/trk/internal/term"
-	"github.com/GujaLomsadze/trk/internal/version"
-	"github.com/GujaLomsadze/trk/web"
+	"github.com/GujaLomsadze/helm/internal/fleet"
+	"github.com/GujaLomsadze/helm/internal/model"
+	"github.com/GujaLomsadze/helm/internal/store"
+	"github.com/GujaLomsadze/helm/internal/term"
+	"github.com/GujaLomsadze/helm/internal/version"
+	"github.com/GujaLomsadze/helm/web"
 )
 
 const maxBody = 4 << 20
@@ -37,9 +37,9 @@ type Server struct {
 	termsOn atomic.Bool
 	stats   statsCache
 	limits  limitsCache
-	// OnShutdown stops the daemon; set by Run. Used by `trk update` to restart into the new binary.
+	// OnShutdown stops the daemon; set by Run. Used by `hlm update` to restart into the new binary.
 	OnShutdown func()
-	// OnStop pauses TRK (hooks stop respawning it) and then shuts down; set by Run.
+	// OnStop pauses Helm (hooks stop respawning it) and then shuts down; set by Run.
 	OnStop func()
 }
 
@@ -287,7 +287,7 @@ func (s *Server) getLimitHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]any{"ok": true, "app": "trk", "version": version.Version})
+	writeJSON(w, map[string]any{"ok": true, "app": "hlm", "version": version.Version})
 }
 
 func (s *Server) shutdown(w http.ResponseWriter, r *http.Request) {

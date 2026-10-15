@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/agent"
 	"golang.org/x/term"
 )
 
@@ -34,7 +34,7 @@ func (u ui) bold(s string) string   { return u.paint("1", s) }
 func (u ui) dim(s string) string    { return u.paint("2", s) }
 
 func (u ui) banner(w io.Writer, subtitle string) {
-	fmt.Fprintf(w, "\n  %s  %s\n\n", u.accent("TRK.EXE"), u.dim(subtitle))
+	fmt.Fprintf(w, "\n  %s  %s\n\n", u.accent("HELM.EXE"), u.dim(subtitle))
 }
 
 // row prints "  ✓ Label        detail".
@@ -78,7 +78,7 @@ func renderInit(w io.Writer, u ui, label string, r agent.InstallResult, dry, dae
 	}
 	if dry {
 		if r.Changed() {
-			fmt.Fprintf(w, "\n  Run %s to apply.\n\n", u.accent("trk init"+agentFlag(label)))
+			fmt.Fprintf(w, "\n  Run %s to apply.\n\n", u.accent("hlm init"+agentFlag(label)))
 		} else {
 			fmt.Fprintf(w, "\n  %s\n\n", u.dim("Nothing to change."))
 		}
@@ -107,7 +107,7 @@ func renderInit(w io.Writer, u ui, label string, r agent.InstallResult, dry, dae
 		fmt.Fprintf(w, "    %s  %s\n", u.accent(fmt.Sprint(n)), step)
 		n++
 	}
-	fmt.Fprintf(w, "    %s  %s  %s\n\n", u.accent(fmt.Sprint(n)), u.accent("trk open"), u.dim(fmt.Sprintf("→ http://localhost:%d", port)))
+	fmt.Fprintf(w, "    %s  %s  %s\n\n", u.accent(fmt.Sprint(n)), u.accent("hlm open"), u.dim(fmt.Sprintf("→ http://localhost:%d", port)))
 }
 
 // agentFlag repeats --agent for a non-default agent in the "run this" hint.

@@ -1,21 +1,41 @@
 version: 2
-project_name: trk
+project_name: hlm
 before:
   hooks:
     - go mod tidy
     - go test ./...
 builds:
-  - id: trk
-    main: ./cmd/trk
+  - id: hlm
+    main: ./cmd/hlm
+    binary: hlm
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X github.com/GujaLomsadze/helm/internal/version.Version={{ .Version }}
+  # Helm was called TRK. Installs from before the rename update themselves by downloading
+  # trk_<os>_<arch> and swapping in the "trk" binary inside: same program, old name.
+  - id: trk-legacy
+    main: ./cmd/hlm
     binary: trk
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
-      - -s -w -X github.com/GujaLomsadze/trk/internal/version.Version={{ .Version }}
+      - -s -w -X github.com/GujaLomsadze/helm/internal/version.Version={{ .Version }}
 archives:
-  - name_template: "trk_{{ .Os }}_{{ .Arch }}"   # version-less so releases/latest/download/<name> works
+  - id: hlm
+    ids: [hlm]
+    name_template: "hlm_{{ .Os }}_{{ .Arch }}"   # version-less so releases/latest/download/<name> works
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+  - id: trk-legacy
+    ids: [trk-legacy]
+    name_template: "trk_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     format_overrides:
       - goos: windows

@@ -2,7 +2,7 @@ package codex
 
 import (
 	"encoding/json"
-	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/agent"
 	"os"
 	"reflect"
 	"strings"
@@ -108,7 +108,7 @@ func TestHookReplyAndLaunch(t *testing.T) {
 	if (Adapter{}).HookReply(json.RawMessage(`{"hook_event_name":"Stop"}`)) != "{}" || (Adapter{}).HookReply(json.RawMessage(`{"hook_event_name":"PreToolUse"}`)) != "" {
 		t.Fatal("reply")
 	}
-	t.Setenv("TRK_CODEX_COMMAND", os.Args[0])
+	t.Setenv("HLM_CODEX_COMMAND", os.Args[0])
 	l, err := Adapter{}.Launch(agent.LaunchSpec{Resume: "abc", Fork: true, Prompt: "-rf"})
 	if err != nil || !reflect.DeepEqual(l.Args, []string{"--no-daemon", "fork", "abc", "--", "-rf"}) {
 		t.Fatal(l, err)

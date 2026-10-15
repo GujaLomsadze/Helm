@@ -15,19 +15,19 @@ func TestAssetsEmbedded(t *testing.T) {
 		}
 	}
 	idx, _ := fs.ReadFile(FS, "index.html")
-	for _, ref := range []string{"theme.css", "app.js", "TRK.EXE", `href="limits.html"`} {
+	for _, ref := range []string{"theme.css", "app.js", "HELM.EXE", `href="limits.html"`} {
 		if !strings.Contains(string(idx), ref) {
 			t.Errorf("index.html lacks %s", ref)
 		}
 	}
 	lim, _ := fs.ReadFile(FS, "limits.html")
-	for _, ref := range []string{"theme.css", "limits.css", "limits.js", "TRK.EXE"} {
+	for _, ref := range []string{"theme.css", "limits.css", "limits.js", "HELM.EXE"} {
 		if !strings.Contains(string(lim), ref) {
 			t.Errorf("limits.html lacks %s", ref)
 		}
 	}
 	st, _ := fs.ReadFile(FS, "stats.html")
-	for _, ref := range []string{"theme.css", "stats.css", "stats.js", "TRK.EXE", `href="limits.html"`} {
+	for _, ref := range []string{"theme.css", "stats.css", "stats.js", "HELM.EXE", `href="limits.html"`} {
 		if !strings.Contains(string(st), ref) {
 			t.Errorf("stats.html lacks %s", ref)
 		}
@@ -169,7 +169,7 @@ func TestTerminalsWiring(t *testing.T) {
 		t.Error("agent drawer is not resizable")
 	}
 	app, _ := os.ReadFile("app.js")
-	if !strings.Contains(string(app), "TRKAgents.openSession(") {
+	if !strings.Contains(string(app), "HelmAgents.openSession(") {
 		t.Error("cards do not open the agent drawer")
 	}
 }

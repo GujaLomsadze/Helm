@@ -31,9 +31,9 @@ func TestUpdateOnSourceBuild(t *testing.T) {
 
 func TestStaleDaemonAdvice(t *testing.T) {
 	msg := staleAdvice(ui{}, "0.1.0", "0.1.2")
-	stop := "pkill -f 'trk serve'"
+	stop := "pkill -f 'hlm serve'"
 	if runtime.GOOS == "windows" {
-		stop = "taskkill /IM trk.exe /F"
+		stop = "taskkill /IM hlm.exe /F"
 	}
 	for _, want := range []string{"0.1.0", "0.1.2", stop} {
 		if !strings.Contains(msg, want) {

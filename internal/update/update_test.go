@@ -56,14 +56,14 @@ func TestLatestFollowsRedirect(t *testing.T) {
 	}
 }
 
-// fakeRelease serves an archive holding a "trk" binary with the given body, plus checksums.txt.
+// fakeRelease serves an archive holding a "hlm" binary with the given body, plus checksums.txt.
 func fakeRelease(t *testing.T, body []byte, corrupt bool) *httptest.Server {
 	t.Helper()
 	name := AssetName(runtime.GOOS, runtime.GOARCH)
 	var archive bytes.Buffer
-	bin := "trk"
+	bin := "hlm"
 	if runtime.GOOS == "windows" {
-		bin = "trk.exe"
+		bin = "hlm.exe"
 		zw := zip.NewWriter(&archive)
 		f, _ := zw.Create(bin)
 		f.Write(body)
@@ -98,7 +98,7 @@ func fakeRelease(t *testing.T, body []byte, corrupt bool) *httptest.Server {
 func TestApplyReplacesBinary(t *testing.T) {
 	srv := fakeRelease(t, []byte("NEW BINARY"), false)
 	defer srv.Close()
-	exe := filepath.Join(t.TempDir(), "trk")
+	exe := filepath.Join(t.TempDir(), "hlm")
 	os.WriteFile(exe, []byte("OLD BINARY"), 0o755)
 	u := &Updater{Base: srv.URL, Repo: "o/r", HTTP: &http.Client{Timeout: 5 * time.Second}}
 	if err := u.Apply(context.Background(), "v0.2.0", exe); err != nil {
@@ -116,7 +116,7 @@ func TestApplyReplacesBinary(t *testing.T) {
 func TestApplyRejectsBadChecksum(t *testing.T) {
 	srv := fakeRelease(t, []byte("EVIL"), true)
 	defer srv.Close()
-	exe := filepath.Join(t.TempDir(), "trk")
+	exe := filepath.Join(t.TempDir(), "hlm")
 	os.WriteFile(exe, []byte("OLD BINARY"), 0o755)
 	u := &Updater{Base: srv.URL, Repo: "o/r", HTTP: &http.Client{Timeout: 5 * time.Second}}
 	if err := u.Apply(context.Background(), "v0.2.0", exe); err == nil {
@@ -154,5 +154,28 @@ func TestCheckIsCachedForADay(t *testing.T) {
 	u.CachedLatest(context.Background())
 	if calls != 2 {
 		t.Fatalf("after 25h calls = %d, want 2", calls)
+	}
+}
+
+// A renamed repo (TRK became Helm) first redirects to its new name.
+func TestLatestFollowsRepoRename(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/owner/trk/releases/latest":
+			http.Redirect(w, r, "/owner/helm/releases/latest", http.StatusMovedPermanently)
+		case "/owner/helm/releases/latest":
+			http.Redirect(w, r, "/owner/helm/releases/tag/v0.3.0", http.StatusFound)
+		default:
+			http.Redirect(w, r, "/elsewhere", http.StatusFound)
+		}
+	}))
+	defer srv.Close()
+	u := &Updater{Base: srv.URL, Repo: "owner/trk", HTTP: srv.Client()}
+	if tag, err := u.Latest(context.Background()); err != nil || tag != "v0.3.0" {
+		t.Fatalf("Latest = %q, %v", tag, err)
+	}
+	u.Repo = "owner/other"
+	if _, err := u.Latest(context.Background()); err == nil {
+		t.Fatal("followed a redirect that isn't a release")
 	}
 }

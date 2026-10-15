@@ -1,12 +1,12 @@
 "use strict";
-// TRK dashboard. Builds DOM with createElement/textContent only: agent text is untrusted.
+// Helm dashboard. Builds DOM with createElement/textContent only: agent text is untrusted.
 
 let view = null;
 let skew = 0; // server clock - local clock
 const DASH = "—";
 const $ = (id) => document.getElementById(id);
 const now = () => Date.now() + skew;
-const kit = window.TRKAgentKit;
+const kit = window.HelmAgentKit;
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -111,7 +111,7 @@ function ctxGauge(s) {
 }
 
 // ---- card layout (edited in the Layout drawer, saved in this browser) ----
-const LAYOUT_KEY = "trk.layout.v1";
+const LAYOUT_KEY = "hlm.layout.v1";
 const WIDGETS = {
   task: "Task", step: "Step", progress: "Progress bar", reality: "Reality check",
   tools: "Recent tools", ctx: "Context gauge", model: "Model", files: "Files touched",
@@ -295,7 +295,7 @@ function card(s) {
         ? h("button", { class: "dismiss", type: "button", "data-dismiss": s.session_id, "aria-label": "Hide " + s.name, title: "Hide this card (it comes back if the session gets busy again)" }, "✕")
         : null,
       h("div", { class: "head-text" }, h("h3", { class: "card-name one", title: s.auto_name ? `${s.name} (${s.auto_name})` : s.name }, multi ? kit.glyph(s.agent || "") : null, s.name),
-        h("div", { class: "meta one", title: where }, s.in_trk ? h("span", { class: "in-trk", title: "Running in a TRK terminal" }, "⌨ ") : null, where || DASH)),
+        h("div", { class: "meta one", title: where }, s.in_hlm ? h("span", { class: "in-hlm", title: "Running in a Helm terminal" }, "⌨ ") : null, where || DASH)),
       // WORKING: light runs through the letters (the text needs its own box for background-clip)
       h("span", { class: "chip chip-" + tone }, tone === "work" ? h("span", { class: "shine" }, label) : label)),
     layout.slots.filter((x) => x.on).map((x) => RENDER[x.id](s, fresh)),
@@ -313,17 +313,17 @@ function renderGrid(v) {
     cards.clear();
     grid.replaceChildren(h("div", { class: "panel empty" }, v.sessions.length
       ? "No " + kit.label(kit.filter()) + " sessions right now. Pick All above to see every agent."
-      : "No agents yet. Connect one with `trk init` (Claude Code) or `trk init --agent codex`, or run `trk start \"task\"`."));
+      : "No agents yet. Connect one with `hlm init` (Claude Code) or `hlm init --agent codex`, or run `hlm start \"task\"`."));
     return;
   }
   grid.querySelector(".empty")?.remove();
   const seen = new Set();
-  // sessions in a live TRK terminal: linked by pid (running) or started with --resume (terminals)
-  const inTRK = new Set(Object.entries(v.running || {}).filter(([, t]) => t).map(([sid]) => sid));
-  for (const t of v.terminals || []) if (!t.exited && t.session_id) inTRK.add(t.session_id);
+  // sessions in a live Helm terminal: linked by pid (running) or started with --resume (terminals)
+  const inHelm = new Set(Object.entries(v.running || {}).filter(([, t]) => t).map(([sid]) => sid));
+  for (const t of v.terminals || []) if (!t.exited && t.session_id) inHelm.add(t.session_id);
   sessions.forEach((s, i) => {
     seen.add(s.session_id);
-    if (inTRK.has(s.session_id)) s = { ...s, in_trk: true };
+    if (inHelm.has(s.session_id)) s = { ...s, in_hlm: true };
     const sig = JSON.stringify(s);
     let c = cards.get(s.session_id);
     if (!c || c.sig !== sig) {
@@ -402,7 +402,7 @@ function render() {
   renderGrid(view);
   renderSide(view);
   renderTimeline(view);
-  if (window.TRKAgents) TRKAgents.update(view);
+  if (window.HelmAgents) HelmAgents.update(view);
 }
 
 // Between snapshots only clocks move; header/inbox/timeline are cheap and have no animation.
@@ -424,16 +424,16 @@ function setConn(live) {
 // ✕ on idle/done cards: the daemon hides the session until it shows new activity.
 // Anywhere else on a card opens its agent drawer (unless the click ended a text selection).
 $("grid").addEventListener("keydown", (e) => {
-  if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-open]") && window.TRKAgents) {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-open]") && window.HelmAgents) {
     e.preventDefault();
-    TRKAgents.openSession(e.target.dataset.open);
+    HelmAgents.openSession(e.target.dataset.open);
   }
 });
 $("grid").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-dismiss]");
   if (!b) {
     const c = e.target.closest("[data-open]");
-    if (c && window.TRKAgents && !String(getSelection())) TRKAgents.openSession(c.dataset.open);
+    if (c && window.HelmAgents && !String(getSelection())) HelmAgents.openSession(c.dataset.open);
     return;
   }
   b.disabled = true;
@@ -443,9 +443,9 @@ $("grid").addEventListener("click", async (e) => {
 
 let stopped = false;
 $("power").addEventListener("click", async () => {
-  const own = window.TRKAgents ? TRKAgents.running() : 0;
+  const own = window.HelmAgents ? HelmAgents.running() : 0;
   const warn = own ? `\n\n${own} agent${own === 1 ? "" : "s"} started from the dashboard will be stopped (resume them later from their cards).` : "";
-  if (!confirm("Stop TRK?\n\nYour agents keep working; nothing is recorded until you run `trk open`." + warn)) return;
+  if (!confirm("Stop Helm?\n\nYour agents keep working; nothing is recorded until you run `hlm open`." + warn)) return;
   try { await fetch("/v1/stop", { method: "POST" }); } catch { /* daemon may close the connection as it exits */ }
   stopped = true;
   $("stopped").hidden = false;
@@ -469,7 +469,7 @@ addEventListener("pagehide", () => { if (es) { es.close(); es = null; } });
 addEventListener("pageshow", (e) => { if (e.persisted && !es && !stopped) connect(); });
 
 // ui.html renders these components from fixtures, without a daemon.
-if (!window.TRK_FIXTURES) {
+if (!window.HLM_FIXTURES) {
   applyAreas();
   applyGrid();
   // Cards are keyed by their data; new agent info (labels, glyphs, abilities) must redraw them.

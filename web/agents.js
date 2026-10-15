@@ -1,12 +1,12 @@
 "use strict";
 // Agent drawer: click a card (or "+ Agent") to see that agent's terminal, resume or fork a
 // session, or start an agent in a folder. Uses h/$/view/dur/now/CHIP/QUIET/kit from app.js
-// and TRKTerm from term.js. Only the terminal on screen holds a websocket: the browser
+// and HelmTerm from term.js. Only the terminal on screen holds a websocket: the browser
 // allows 6 connections per host.
 
-window.TRKAgents = (function () {
+window.HelmAgents = (function () {
   const dlg = $("agents"), tabs = $("ag-tabs"), main = $("ag-main"), grip = $("ag-grip");
-  // selected: "new", a terminal id, or "s:<session id>" for a session not running in TRK
+  // selected: "new", a terminal id, or "s:<session id>" for a session not running in Helm
   let terms = [], selected = "new", newFrom = null, viewer = null, popped = new Set();
   let acts = {}; // data-act key → handler for the session panel on screen
 
@@ -16,7 +16,7 @@ window.TRKAgents = (function () {
   const enabled = () => !!(view && view.terminals_enabled && view.terminals_supported);
   const liveTermFor = (sid) => terms.find((t) => !t.exited && t.session_id === sid);
   const termName = (t) => { const s = session(t.session_id); return s ? s.name : t.title || t.name; };
-  // A session is resumable when its agent gave it a real id (not a cwd-… fallback or a `trk start` id).
+  // A session is resumable when its agent gave it a real id (not a cwd-… fallback or a `hlm start` id).
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const asSession = (x) => (x && x.session_id ? { ...x, agent: x.agent || (session(x.session_id) || {}).agent } : x || {});
   const resumable = (x) => uuid.test(kit.native(asSession(x)) || "");
@@ -33,11 +33,11 @@ window.TRKAgents = (function () {
     const btn = $("agent-open"), n = running();
     btn.hidden = !enabled() && !terms.length;
     btn.replaceChildren(...["+ Agent", n ? h("span", { class: "ag-count" }, n) : null].filter(Boolean));
-    btn.title = n ? `${n} agent${n === 1 ? "" : "s"} running in TRK` : "Start an agent in a terminal";
+    btn.title = n ? `${n} agent${n === 1 ? "" : "s"} running in Helm` : "Start an agent in a terminal";
     if (!dlg.open) return;
     if (selected.startsWith("s:")) {
       const sid = selected.slice(2), t = liveTermFor(sid);
-      if (t) return show(t.id); // it started running in TRK
+      if (t) return show(t.id); // it started running in Helm
       if (!session(sid)) return show("new");
       drawTabs();
       drawActions();
@@ -116,7 +116,7 @@ window.TRKAgents = (function () {
   $("ag-title-input").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); endRename(); } });
   $("ag-title-input").addEventListener("blur", () => setTimeout(() => { if (renaming && document.activeElement !== $("ag-title-input")) endRename(); }, 150));
 
-  const AGENT_KEY = "trk.newAgent";
+  const AGENT_KEY = "hlm.newAgent";
   function lastAgent() { try { return localStorage.getItem(AGENT_KEY) || ""; } catch { return ""; } }
   function setLastAgent(a) { try { localStorage.setItem(AGENT_KEY, a); } catch { /* per-browser convenience */ } }
   const multiAgents = () => kit.multi((view && view.sessions) || []);
@@ -140,17 +140,17 @@ window.TRKAgents = (function () {
     const el = h("div", { class: "ag-term" });
     main.replaceChildren(h("div", { class: "ag-meta one", title: t.dir + (t.prompt ? " · " + t.prompt : "") }, t.dir,
       t.fork ? " · forked conversation" : t.resume ? " · resumed" : "", t.prompt ? " · “" + t.prompt + "”" : ""), el);
-    viewer = TRKTerm.attach(el, id, { onExit: () => update(view || {}) });
+    viewer = HelmTerm.attach(el, id, { onExit: () => update(view || {}) });
     setTimeout(() => viewer && viewer.focus(), 50);
   }
 
-  // A session that isn't running in a TRK terminal: it runs in another terminal, or nowhere.
+  // A session that isn't running in a Helm terminal: it runs in another terminal, or nowhere.
   let sessionSig = "";
   function drawSession(sid, force) {
     const s = session(sid);
     if (!s) return show("new");
     const elsewhere = !!(view.running && sid in view.running);
-    // busy, but TRK can't see a process for it (an agent without PID tracking, or one it hasn't linked yet)
+    // busy, but Helm can't see a process for it (an agent without PID tracking, or one it hasn't linked yet)
     const maybe = !elsewhere && !QUIET.includes(s.status);
     const who = agentLabel(s), cmd = kit.resumeCommand(asSession(s));
     const on = enabled();
@@ -172,10 +172,10 @@ window.TRKAgents = (function () {
     };
     const folder = s.cwd.split("/").filter(Boolean).pop() || s.cwd;
     const resume = act("resume", "↻ " + (elsewhere || maybe ? "Take over" : "Resume"),
-      maybe ? `Only if ${who} has stopped working on it: two agents on one conversation both write to it.` : "Continue this conversation in a TRK terminal.",
+      maybe ? `Only if ${who} has stopped working on it: two agents on one conversation both write to it.` : "Continue this conversation in a Helm terminal.",
       cmd, launchSpec(resumeSpec(s, s.cwd)),
       { primary: !elsewhere && !maybe, disabled: !on || elsewhere, why: elsewhere ? `Still running in another terminal. Stop ${who} there first, or fork it.` : "" });
-    const fork = act("fork", "↳ Fork into TRK", "A copy of the conversation runs here; the original stays as it is.", null,
+    const fork = act("fork", "↳ Fork into Helm", "A copy of the conversation runs here; the original stays as it is.", null,
       launchSpec(resumeSpec(s, s.cwd, true)), { primary: elsewhere || maybe, disabled: !on });
     const fresh = act("new", "+ New agent here", `Fresh ${who} in ${folder}/, nothing carried over.`, null,
       () => show("new", { dir: s.cwd, name: s.name, agent: agentOf(s) }), { disabled: !on });
@@ -184,9 +184,9 @@ window.TRKAgents = (function () {
       : !on ? "Terminals are off. Turn them on in ⚙ Card layout → Terminals." : "";
     main.replaceChildren(h("div", { class: "ag-ext" },
       h("p", { class: "ag-intro" }, !resumable(s)
-        ? "TRK knows this session by its folder only, so it can't resume it. You can start a fresh agent there."
-        : elsewhere ? `${who} is running this session in another terminal (a tab or your editor). TRK can watch it, but can't show or type into that window.`
-        : maybe ? `This session looks busy, but TRK can't see where ${who} runs it. Fork it to be safe, or take it over if it has stopped.`
+        ? "Helm knows this session by its folder only, so it can't resume it. You can start a fresh agent there."
+        : elsewhere ? `${who} is running this session in another terminal (a tab or your editor). Helm can watch it, but can't show or type into that window.`
+        : maybe ? `This session looks busy, but Helm can't see where ${who} runs it. Fork it to be safe, or take it over if it has stopped.`
         : "This session isn't running anywhere right now. Pick it up where it stopped."),
       h("dl", { class: "ag-where" },
         h("dt", null, "folder"), h("dd", null, s.cwd || DASH),
@@ -232,7 +232,7 @@ window.TRKAgents = (function () {
       h("label", { class: "ag-lab", for: "ag-prompt" }, "First prompt"), prompt,
       h("div", { class: "ag-go" }, go, err),
       h("p", { class: "meta" }, on
-        ? "Runs the agent in a terminal owned by TRK. Closing this drawer keeps it running. If TRK restarts, resume it from its card."
+        ? "Runs the agent in a terminal owned by Helm. Closing this drawer keeps it running. If Helm restarts, resume it from its card."
         : view && !view.terminals_supported ? "Terminals don't run on this system (native Windows)."
         : "Terminals are off. Turn them on in ⚙ Card layout → Terminals."));
     f.addEventListener("click", (e) => {
@@ -273,7 +273,7 @@ window.TRKAgents = (function () {
   }
 
   // ---- width: drag the left edge (or focus it and use ←/→); remembered in this browser ----
-  const W_KEY = "trk.agentDrawerW", W_MIN = 380;
+  const W_KEY = "hlm.agentDrawerW", W_MIN = 380;
   const clampW = (w) => Math.round(Math.max(Math.min(W_MIN, innerWidth), Math.min(innerWidth - 24, w)));
   function setW(w, save) {
     dlg.style.setProperty("--ag-w", clampW(w) + "px");
@@ -321,7 +321,7 @@ window.TRKAgents = (function () {
     show(id, from);
   }
 
-  // A card click opens that session: its TRK terminal when it has one, else what can be done with it.
+  // A card click opens that session: its Helm terminal when it has one, else what can be done with it.
   function openSession(sid) {
     const elsewhere = !!(view && view.running && view.running[sid] === "");
     const t = liveTermFor(sid) || (!elsewhere && terms.find((x) => x.session_id === sid && x.exited));
@@ -340,7 +340,7 @@ window.TRKAgents = (function () {
     const a = e.target.closest("[data-act]");
     if (a && a.getAttribute("aria-disabled") !== "true" && acts[a.dataset.act]) acts[a.dataset.act](a);
   });
-  $("ag-pop").addEventListener("click", () => { const t = find(selected); if (!t) return; if (TRKTerm.popOut(t)) { popped.add(t.id); show(t.id); } });
+  $("ag-pop").addEventListener("click", () => { const t = find(selected); if (!t) return; if (HelmTerm.popOut(t)) { popped.add(t.id); show(t.id); } });
   $("ag-resume").addEventListener("click", async () => {
     const t = find(selected);
     if (!t) return;
@@ -350,11 +350,11 @@ window.TRKAgents = (function () {
     const t = find(selected);
     if (!t || (!t.exited && !confirm(`Stop ${agentLabel(t)} in ${termName(t)}?\n\nThe agent is killed; you can resume its conversation from its card.`))) return;
     dropViewer();
-    await TRKTerm.stop(t.id);
+    await HelmTerm.stop(t.id);
     terms = terms.filter((x) => x.id !== t.id);
     show("new");
   });
-  TRKTerm.fontControl($("ag-font"));
+  HelmTerm.fontControl($("ag-font"));
   $("ag-close").addEventListener("click", () => dlg.close());
   dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); }); // backdrop
   dlg.addEventListener("close", dropViewer); // closing never stops an agent

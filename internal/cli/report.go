@@ -3,16 +3,17 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/config"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/client"
-	"github.com/GujaLomsadze/trk/internal/model"
-	"github.com/GujaLomsadze/trk/internal/ptree"
+	"github.com/GujaLomsadze/helm/internal/client"
+	"github.com/GujaLomsadze/helm/internal/model"
+	"github.com/GujaLomsadze/helm/internal/ptree"
 )
 
 // Seams for tests.
@@ -32,10 +33,10 @@ type cliPayload struct {
 
 func envelope(source, kind string, payload json.RawMessage) model.Envelope {
 	env := model.Envelope{TS: nowMS(), Source: source, Kind: kind, ClaudePID: findClaude(), Payload: payload}
-	if s := os.Getenv("TRK_SESSION"); s != "" {
+	if s := config.Env("SESSION"); s != "" {
 		env.SessionID, env.SessionVia = s, model.AttrEnv
 	} else if env.ClaudePID == 0 {
-		// Not under an agent TRK finds by process: ask each agent's environment.
+		// Not under an agent Helm finds by process: ask each agent's environment.
 		for _, a := range agent.All() {
 			if native := a.SessionFromEnv(os.Getenv); native != "" {
 				env.SessionID = agent.SessionKey(a.Name(), native)
@@ -53,13 +54,13 @@ func report(kind string, args []string, stderr io.Writer) int {
 	case model.KindStart:
 		p.Text, p.Steps = parseStart(args)
 		if p.Text == "" {
-			fmt.Fprintln(stderr, `usage: trk start "<task>" [--steps N]`)
+			fmt.Fprintln(stderr, `usage: hlm start "<task>" [--steps N]`)
 			return 0
 		}
 	case model.KindStep, model.KindBlocked:
 		p.Text = strings.TrimSpace(strings.Join(args, " "))
 		if p.Text == "" {
-			fmt.Fprintf(stderr, "usage: trk %s \"<text>\"\n", kind)
+			fmt.Fprintf(stderr, "usage: hlm %s \"<text>\"\n", kind)
 			return 0
 		}
 	case model.KindDone:
@@ -67,7 +68,7 @@ func report(kind string, args []string, stderr io.Writer) int {
 	case model.KindProgress:
 		i, n, ok := parseProgress(strings.Join(args, ""))
 		if !ok {
-			fmt.Fprintln(stderr, "usage: trk progress <i>/<N>")
+			fmt.Fprintln(stderr, "usage: hlm progress <i>/<N>")
 			return 0
 		}
 		p.I, p.N = i, n

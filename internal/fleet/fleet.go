@@ -13,10 +13,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	"github.com/GujaLomsadze/trk/internal/derive"
-	"github.com/GujaLomsadze/trk/internal/gitinfo"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/derive"
+	"github.com/GujaLomsadze/helm/internal/gitinfo"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 type GitLookup func(cwd string) gitinfo.Info
@@ -199,7 +199,7 @@ func (f *Fleet) Normalize(env model.Envelope, now int64) (model.Event, bool) {
 	case model.SourceHook:
 		name = env.Agent
 		if name == "" {
-			name = agent.Default // hooks installed before TRK knew other agents
+			name = agent.Default // hooks installed before Helm knew other agents
 		}
 		a, ok := agent.Get(name)
 		if !ok {
@@ -210,8 +210,8 @@ func (f *Fleet) Normalize(env model.Envelope, now int64) (model.Event, bool) {
 			return model.Event{}, false
 		}
 		raw, kind, native, key = n.Payload, n.Kind, n.Native, n.Key
-		raw = flag(raw, "trk_background", n.Background)
-		raw = flag(raw, "trk_defer", n.Defer)
+		raw = flag(raw, "hlm_background", n.Background)
+		raw = flag(raw, "hlm_defer", n.Defer)
 	case model.SourceStatusline:
 		kind, name = model.KindStatus, env.Agent
 		if name == "" {
@@ -244,7 +244,7 @@ func (f *Fleet) Normalize(env model.Envelope, now int64) (model.Event, bool) {
 	return model.Event{Agent: name, NativeID: native, Key: key, TS: ts, SessionID: sid, Source: source, Kind: kind, Payload: raw, Attribution: attr}, true
 }
 
-// flag sets a TRK-owned boolean in a payload object (only when true: the common case stays byte-identical).
+// flag sets a Helm-owned boolean in a payload object (only when true: the common case stays byte-identical).
 func flag(raw json.RawMessage, k string, on bool) json.RawMessage {
 	if !on {
 		return raw
@@ -260,7 +260,7 @@ func flag(raw json.RawMessage, k string, on bool) json.RawMessage {
 	return raw
 }
 
-// statusKey hashes only the status-line fields TRK uses, so refreshes that change
+// statusKey hashes only the status-line fields Helm uses, so refreshes that change
 // nothing but volatile fields (durations, line counts) are dropped as duplicates.
 func statusKey(p payload) uint64 {
 	b, _ := json.Marshal(struct {

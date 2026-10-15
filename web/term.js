@@ -1,9 +1,17 @@
 "use strict";
+// Helm was called TRK: carry this browser's saved settings over once (trk.* → hlm.*).
+try {
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith("trk.") && localStorage.getItem("hlm." + k.slice(4)) == null) localStorage.setItem("hlm." + k.slice(4), localStorage.getItem(k));
+  }
+} catch { /* storage off */ }
+
 // A viewer for one dashboard-started agent (daemon pty → xterm.js over a websocket).
 // Shared by the agent drawer (index.html) and the pop-out page (term.html).
 // Builds DOM with createElement/textContent only, like app.js.
 
-window.TRKTerm = (function () {
+window.HelmTerm = (function () {
   const THEME = {
     background: "#0B0605", foreground: "#F1DCD6", cursor: "#FF5A4A", cursorAccent: "#0B0605",
     selectionBackground: "#6E2A20", black: "#110908", red: "#FF4A3D", green: "#5CFF9D", yellow: "#FFD66B",
@@ -12,7 +20,7 @@ window.TRKTerm = (function () {
 
   // Font size is one setting for every terminal view, kept in this browser; open views
   // (other tabs and pop-outs included) follow a change.
-  const FONT_KEY = "trk.termFont", FONT_MIN = 10, FONT_MAX = 24, FONT_DEF = 14;
+  const FONT_KEY = "hlm.termFont", FONT_MIN = 10, FONT_MAX = 24, FONT_DEF = 14;
   const views = new Set();
   function fontSize() {
     let n = 0;
@@ -76,7 +84,7 @@ window.TRKTerm = (function () {
   async function stop(id) { await fetch("/v1/terms/" + encodeURIComponent(id), { method: "DELETE" }); }
 
   function popOut(t) {
-    return window.open("term.html?id=" + encodeURIComponent(t.id), "trk-term-" + t.id, "popup,width=1100,height=720");
+    return window.open("term.html?id=" + encodeURIComponent(t.id), "hlm-term-" + t.id, "popup,width=1100,height=720");
   }
 
   // fontControl wires a "A− 14 A+" group: buttons [data-font="-1|1"], value in [data-font-n].

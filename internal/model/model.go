@@ -1,7 +1,7 @@
 // Package model defines the wire envelope, stored events and materialized state.
 //
 // Canonical payload: every adapter turns its agent's hook JSON into these fields (the
-// names follow Claude Code's hooks, where TRK started). The core reads nothing else.
+// names follow Claude Code's hooks, where Helm started). The core reads nothing else.
 //
 //	session_id, cwd, model             the session, its folder, its model (string or {display_name,id})
 //	prompt                             user prompt (prompt kind)
@@ -14,7 +14,7 @@
 //	agent_id, agent_type               subagents
 //	background_tasks [{status}]        tasks still running when a turn ends
 //	cost, context_window, rate_limits  status-line counters (agents with Caps.Counters)
-//	trk_background, trk_defer          set by TRK from the adapter (see agent.Normalized)
+//	hlm_background, hlm_defer          set by Helm from the adapter (see agent.Normalized)
 package model
 
 import "encoding/json"
@@ -22,12 +22,12 @@ import "encoding/json"
 // Envelope is what clients POST to /v1/events.
 type Envelope struct {
 	Agent      string          `json:"agent,omitempty"`       // adapter that sent a hook ("" = claude, from older installs)
-	TerminalID string          `json:"terminal_id,omitempty"` // TRK terminal the agent runs in (TRK_TERMINAL_ID)
+	TerminalID string          `json:"terminal_id,omitempty"` // Helm terminal the agent runs in (HLM_TERMINAL_ID)
 	TS         int64           `json:"ts,omitempty"`          // unix ms at the caller
 	Source     string          `json:"source"`                // cli|hook|statusline|api
 	Kind       string          `json:"kind,omitempty"`        // empty for hook/statusline: derived by the daemon
-	SessionID  string          `json:"session_id,omitempty"`  // explicit session (TRK_SESSION or third-party)
-	SessionVia string          `json:"session_via,omitempty"` // "env" when SessionID came from TRK_SESSION
+	SessionID  string          `json:"session_id,omitempty"`  // explicit session (HLM_SESSION or third-party)
+	SessionVia string          `json:"session_via,omitempty"` // "env" when SessionID came from HLM_SESSION
 	ClaudePID  int             `json:"claude_pid,omitempty"`  // nearest ancestor agent process with PID attribution (claude), 0 if none
 	Payload    json.RawMessage `json:"payload,omitempty"`
 }

@@ -3,9 +3,9 @@ package claude
 import (
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
-	"github.com/GujaLomsadze/trk/internal/claudecfg"
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/claudecfg"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 func TestKindForHook(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/agent"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,7 +51,7 @@ type Info struct {
 	Fork   bool   `json:"fork,omitempty"`
 	Title  string `json:"title,omitempty"`
 	// SessionID is the session running in it, once its hooks have reported one (the daemon
-	// links it by TRK_TERMINAL_ID or process id). Kept after the process exits.
+	// links it by HLM_TERMINAL_ID or process id). Kept after the process exits.
 	SessionID string `json:"session_id,omitempty"`
 	Started   int64  `json:"started"` // unix ms
 	PID       int    `json:"pid"`
@@ -89,7 +89,7 @@ func (m *Manager) Start(sp Spec) (*Term, error) {
 		return nil, errors.New("fork needs a session to fork")
 	}
 	if m.Running() >= MaxRunning {
-		return nil, fmt.Errorf("%d agents are already running in TRK; stop one first", MaxRunning)
+		return nil, fmt.Errorf("%d agents are already running in Helm; stop one first", MaxRunning)
 	}
 	l, err := ad.Launch(agent.LaunchSpec{Prompt: sp.Prompt, Resume: sp.Resume, Fork: sp.Fork})
 	if m.Command != "" {
@@ -101,10 +101,10 @@ func (m *Manager) Start(sp Spec) (*Term, error) {
 	id := newID()
 	cmd := exec.Command(l.Exe, l.Args...)
 	cmd.Dir = dir
-	cmd.Env = append(CleanEnv(), "TERM=xterm-256color", "COLORTERM=truecolor", "TRK_TERMINAL_ID="+id)
+	cmd.Env = append(CleanEnv(), "TERM=xterm-256color", "COLORTERM=truecolor", "HLM_TERMINAL_ID="+id)
 	f, err := startPty(cmd, 120, 32)
 	if errors.Is(err, exec.ErrNotFound) {
-		return nil, fmt.Errorf("%s is not on TRK's PATH; start TRK from a shell where `%s` works (trk stop, then trk open)", l.Exe, l.Exe)
+		return nil, fmt.Errorf("%s is not on Helm's PATH; start Helm from a shell where `%s` works (hlm stop, then hlm open)", l.Exe, l.Exe)
 	}
 	if err != nil {
 		return nil, err
@@ -125,7 +125,7 @@ func (m *Manager) Start(sp Spec) (*Term, error) {
 	return t, nil
 }
 
-// LinkFirst records the first session a terminal reports (by TRK_TERMINAL_ID). Later
+// LinkFirst records the first session a terminal reports (by HLM_TERMINAL_ID). Later
 // sessions from the same terminal (subagents, forks it spawns) don't replace it.
 func (m *Manager) LinkFirst(id, sessionID string) bool {
 	t, ok := m.Get(id)
@@ -333,7 +333,7 @@ func CleanEnv() []string {
 }
 
 func private(k string) bool {
-	if k == "TRK_SESSION" || k == "TRK_TERMINAL_ID" {
+	if k == "HLM_SESSION" || k == "HLM_TERMINAL_ID" || k == "TRK_SESSION" || k == "TRK_TERMINAL_ID" {
 		return true
 	}
 	for _, a := range agent.All() {

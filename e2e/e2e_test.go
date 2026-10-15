@@ -26,15 +26,15 @@ type harness struct {
 
 func setup(t *testing.T) *harness {
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "trk")
-	if out, err := exec.Command("go", "build", "-o", bin, "../cmd/trk").CombinedOutput(); err != nil {
+	bin := filepath.Join(dir, "hlm")
+	if out, err := exec.Command("go", "build", "-o", bin, "../cmd/hlm").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
 	l, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
 	l.Close()
 	h := &harness{t: t, bin: bin, data: filepath.Join(dir, "data"), port: port}
-	h.env = append(os.Environ(), "TRK_PORT="+port, "TRK_DATA_DIR="+h.data, "TRK_URL=", "TRK_SESSION=", "TRK_NO_SPAWN=")
+	h.env = append(os.Environ(), "HLM_PORT="+port, "HLM_DATA_DIR="+h.data, "HLM_URL=", "HLM_SESSION=", "HLM_NO_SPAWN=")
 	t.Cleanup(h.killDaemon)
 	return h
 }
@@ -131,7 +131,7 @@ func (h *harness) waitFor(what string, within time.Duration, ok func() bool) {
 }
 
 func (h *harness) killDaemon() {
-	b, err := os.ReadFile(filepath.Join(h.data, "trk.pid"))
+	b, err := os.ReadFile(filepath.Join(h.data, "hlm.pid"))
 	if err != nil {
 		return
 	}
@@ -147,7 +147,7 @@ func hookJSON(sid, event, cwd, extra string) string {
 func TestAcceptance(t *testing.T) {
 	h := setup(t)
 
-	// 1. Auto-spawn: no `trk serve`, a hook call brings the daemon up.
+	// 1. Auto-spawn: no `hlm serve`, a hook call brings the daemon up.
 	code, out, _ := h.run(hookJSON("A", "SessionStart", "/w/a", ""), "hook")
 	if code != 0 || out != "" {
 		t.Fatalf("hook: code=%d out=%q", code, out)
@@ -170,7 +170,7 @@ func TestAcceptance(t *testing.T) {
 
 	// 3b. Restart between two sessions in the same folder: a CLI call from ONE's
 	// process must still land on ONE (pid map persisted), not on the newer TWO.
-	h.underClaude("wt-one-again", fmt.Sprintf(`echo '%s' | %s hook && sleep 0.3 && kill $(cat %s/trk.pid) && sleep 1 && %s step "after restart"`,
+	h.underClaude("wt-one-again", fmt.Sprintf(`echo '%s' | %s hook && sleep 0.3 && kill $(cat %s/hlm.pid) && sleep 1 && %s step "after restart"`,
 		hookJSON("ONE", "PreToolUse", "/w/shared", `,"tool_name":"Bash","tool_input":{"command":"ls"}`), h.bin, h.data, h.bin))
 	h.waitFor("attribution kept across restart", 3*time.Second, func() bool {
 		one, two := h.session("ONE"), h.session("TWO")
@@ -188,16 +188,16 @@ func TestAcceptance(t *testing.T) {
 
 	// 5. Status line with null fields.
 	code, out, took = h.run(`{"session_id":"A","context_window":{"used_percentage":null}}`, "statusline")
-	if code != 0 || strings.TrimSpace(out) != "trk · ctx — · 5h — · 7d —" || took > time.Second {
+	if code != 0 || strings.TrimSpace(out) != "hlm · ctx — · 5h — · 7d —" || took > time.Second {
 		t.Fatalf("statusline: code=%d out=%q took=%v", code, out, took)
 	}
 
-	// 6. TRK_URL pointing nowhere: no spawn, exit 0, quick.
+	// 6. HLM_URL pointing nowhere: no spawn, exit 0, quick.
 	cmd := exec.Command(h.bin, "step", "x")
-	cmd.Env = append(h.env, "TRK_URL=http://127.0.0.1:1")
+	cmd.Env = append(h.env, "HLM_URL=http://127.0.0.1:1")
 	t0 := time.Now()
 	if err := cmd.Run(); err != nil || time.Since(t0) > 500*time.Millisecond {
-		t.Fatalf("TRK_URL down: err=%v took=%v", err, time.Since(t0))
+		t.Fatalf("HLM_URL down: err=%v took=%v", err, time.Since(t0))
 	}
 	_ = io.Discard
 }

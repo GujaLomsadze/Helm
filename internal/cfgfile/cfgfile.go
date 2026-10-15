@@ -18,9 +18,9 @@ func ReadOptional(path string) ([]byte, bool, error) {
 	return b, err == nil, err
 }
 
-// Backup saves data next to path before TRK rewrites it.
+// Backup saves data next to path before Helm rewrites it.
 func Backup(path string, data []byte, now time.Time) (string, error) {
-	dst := path + ".trk-backup-" + now.Format("20060102-150405")
+	dst := path + ".hlm-backup-" + now.Format("20060102-150405")
 	return dst, os.WriteFile(dst, data, 0o600)
 }
 
@@ -37,7 +37,7 @@ func WriteAtomic(path string, data []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".trk-*")
+	tmp, err := os.CreateTemp(dir, ".hlm-*")
 	if err != nil {
 		return err
 	}
@@ -56,26 +56,34 @@ func WriteAtomic(path string, data []byte) error {
 }
 
 const (
-	BlockBegin = "<!-- trk:begin -->"
-	BlockEnd   = "<!-- trk:end -->"
-	Snippet    = BlockBegin + `
+	legacyBegin = "<!-- trk:begin -->"
+	legacyEnd   = "<!-- trk:end -->"
+	BlockBegin  = "<!-- hlm:begin -->"
+	BlockEnd    = "<!-- hlm:end -->"
+	Snippet     = BlockBegin + `
 ## Progress reporting
-Report progress with the ` + "`trk`" + ` CLI. It never fails, prints nothing and always exits 0, so don't check its output.
-- At the start of a task: ` + "`trk start \"<task>\" --steps <N>`" + `
-- When moving to a new step: ` + "`trk step \"<what you're doing>\"`" + ` and ` + "`trk progress <i>/<N>`" + `
-- When you need a human decision: ` + "`trk blocked \"<question>\"`" + `
-- When finished: ` + "`trk done \"<one-line result>\"`" + `
+Report progress with the ` + "`hlm`" + ` CLI. It never fails, prints nothing and always exits 0, so don't check its output.
+- At the start of a task: ` + "`hlm start \"<task>\" --steps <N>`" + `
+- When moving to a new step: ` + "`hlm step \"<what you're doing>\"`" + ` and ` + "`hlm progress <i>/<N>`" + `
+- When you need a human decision: ` + "`hlm blocked \"<question>\"`" + `
+- When finished: ` + "`hlm done \"<one-line result>\"`" + `
 
-Attach ` + "`trk`" + ` to a shell command you were going to run anyway, so it adds no extra step:
-` + "`trk step \"Writing tests\"; go test ./...`" + `
-Put ` + "`trk`" + ` first and join with ` + "`;`" + ` (never pipe it), so the real command's output and exit code are unchanged.
-Run ` + "`trk`" + ` on its own only when there is no command to attach it to.
+Attach ` + "`hlm`" + ` to a shell command you were going to run anyway, so it adds no extra step:
+` + "`hlm step \"Writing tests\"; go test ./...`" + `
+Put ` + "`hlm`" + ` first and join with ` + "`;`" + ` (never pipe it), so the real command's output and exit code are unchanged.
+Run ` + "`hlm`" + ` on its own only when there is no command to attach it to.
 ` + BlockEnd + "\n"
 )
 
-// ApplyBlock adds TRK's progress block to an instruction file, or replaces it in place.
+// ApplyBlock adds Helm's progress block to an instruction file, or replaces it in place.
 func ApplyBlock(existing string) string {
 	b, e := strings.Index(existing, BlockBegin), strings.Index(existing, BlockEnd)
+	if b < 0 || e < b { // TRK's block (Helm's old name): replace it in place
+		b, e = strings.Index(existing, legacyBegin), strings.Index(existing, legacyEnd)
+		if b >= 0 && e > b {
+			return existing[:b] + strings.TrimSuffix(Snippet, "\n") + existing[e+len(legacyEnd):]
+		}
+	}
 	if b >= 0 && e > b {
 		return existing[:b] + strings.TrimSuffix(Snippet, "\n") + existing[e+len(BlockEnd):]
 	}

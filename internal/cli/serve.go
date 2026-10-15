@@ -15,44 +15,61 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/client"
-	"github.com/GujaLomsadze/trk/internal/config"
-	"github.com/GujaLomsadze/trk/internal/daemon"
-	"github.com/GujaLomsadze/trk/internal/version"
+	"github.com/GujaLomsadze/helm/internal/client"
+	"github.com/GujaLomsadze/helm/internal/config"
+	"github.com/GujaLomsadze/helm/internal/daemon"
+	"github.com/GujaLomsadze/helm/internal/version"
 )
 
 func serve(stdout, stderr io.Writer) int {
-	resume() // running serve by hand means "I want TRK on"
+	resume() // running serve by hand means "I want Helm on"
 	dir, err := config.DataDir()
-	if err == nil {
-		err = os.MkdirAll(dir, 0o755)
-	}
 	if err != nil {
-		fmt.Fprintf(stderr, "trk serve: data dir: %v\n", err)
+		fmt.Fprintf(stderr, "hlm serve: data dir: %v\n", err)
 		return 1
 	}
-	logPath := filepath.Join(dir, "trk.log")
-	if st, err := os.Stat(logPath); err == nil && st.Size() > 5<<20 {
-		os.Truncate(logPath, 0)
-	}
-	var logw io.Writer = io.Discard
-	if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
-		defer f.Close()
-		logw = f
+	var logFile *os.File
+	defer func() {
+		if logFile != nil {
+			logFile.Close()
+		}
+	}()
+	// After the port is ours: an older daemon can't be holding the data folder.
+	prepare := func() (*log.Logger, error) {
+		moved, err := config.MigrateDataDir()
+		if err != nil {
+			return nil, fmt.Errorf("moving TRK's data to Helm's folder: %w", err)
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("data dir: %w", err)
+		}
+		logPath := filepath.Join(dir, "hlm.log")
+		if st, err := os.Stat(logPath); err == nil && st.Size() > 5<<20 {
+			os.Truncate(logPath, 0)
+		}
+		var logw io.Writer = io.Discard
+		if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+			logFile, logw = f, f
+		}
+		lg := log.New(logw, "", log.LstdFlags)
+		if moved {
+			lg.Printf("moved TRK's data folder to %s", dir)
+		}
+		return lg, nil
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	addr := fmt.Sprintf("127.0.0.1:%d", config.Port())
 	err = daemon.Run(ctx, daemon.Options{
-		Addr: addr, DataDir: dir, Logger: log.New(logw, "", log.LstdFlags), MaxDBBytes: config.MaxDBBytes(),
-		OnListen: func(string) { fmt.Fprintf(stdout, "trk serving http://localhost:%d\n", config.Port()) },
+		Addr: addr, DataDir: dir, MaxDBBytes: config.MaxDBBytes(), Prepare: prepare,
+		OnListen: func(string) { fmt.Fprintf(stdout, "hlm serving http://localhost:%d\n", config.Port()) },
 	})
 	if errors.Is(err, daemon.ErrAlreadyRunning) {
-		fmt.Fprintf(stdout, "trk already running at http://localhost:%d\n", config.Port())
+		fmt.Fprintf(stdout, "hlm already running at http://localhost:%d\n", config.Port())
 		return 0
 	}
 	if err != nil {
-		fmt.Fprintf(stderr, "trk serve: %v\n", err)
+		fmt.Fprintf(stderr, "hlm serve: %v\n", err)
 		return 1
 	}
 	return 0
@@ -70,7 +87,7 @@ func open(stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	if !c.EnsureDaemon(3 * time.Second) {
-		fmt.Fprintf(stderr, "trk: daemon not reachable at %s\n", url)
+		fmt.Fprintf(stderr, "hlm: daemon not reachable at %s\n", url)
 		return 1
 	}
 	fmt.Fprintln(stdout, url)

@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -36,7 +38,7 @@ func TestHookGarbageStdin(t *testing.T) {
 }
 
 func TestHookDaemonDownIsFastAndSilent(t *testing.T) {
-	t.Setenv("TRK_URL", "http://127.0.0.1:1") // nothing listens; TRK_URL disables spawn
+	t.Setenv("HLM_URL", "http://127.0.0.1:1") // nothing listens; HLM_URL disables spawn
 	start := time.Now()
 	var out, errb bytes.Buffer
 	code := Run([]string{"hook"}, strings.NewReader(`{"session_id":"A"}`), &out, &errb)
@@ -48,10 +50,10 @@ func TestHookDaemonDownIsFastAndSilent(t *testing.T) {
 func TestCompactLine(t *testing.T) {
 	future := time.Now().Add(time.Hour).Unix()
 	cases := []struct{ in, want string }{
-		{`{"context_window":{"used_percentage":42.4},"rate_limits":{"five_hour":{"used_percentage":23,"resets_at":` + itoa(future) + `},"seven_day":{"used_percentage":61.2}}}`, "trk · ctx 42% · 5h 23% · 7d 61%"},
-		{`{"context_window":{"used_percentage":null}}`, "trk · ctx — · 5h — · 7d —"},
-		{`{"rate_limits":{"five_hour":{"used_percentage":90,"resets_at":1}}}`, "trk · ctx — · 5h — · 7d —"},
-		{`garbage`, "trk · ctx — · 5h — · 7d —"},
+		{`{"context_window":{"used_percentage":42.4},"rate_limits":{"five_hour":{"used_percentage":23,"resets_at":` + itoa(future) + `},"seven_day":{"used_percentage":61.2}}}`, "hlm · ctx 42% · 5h 23% · 7d 61%"},
+		{`{"context_window":{"used_percentage":null}}`, "hlm · ctx — · 5h — · 7d —"},
+		{`{"rate_limits":{"five_hour":{"used_percentage":90,"resets_at":1}}}`, "hlm · ctx — · 5h — · 7d —"},
+		{`garbage`, "hlm · ctx — · 5h — · 7d —"},
 	}
 	for _, c := range cases {
 		if got := compactLine([]byte(c.in)); got != c.want {
@@ -63,7 +65,7 @@ func TestCompactLine(t *testing.T) {
 func TestStatuslineGarbage(t *testing.T) {
 	capture(t)
 	code, out := runIn("not json", "statusline")
-	if code != 0 || strings.TrimSpace(out) != "trk · ctx — · 5h — · 7d —" {
+	if code != 0 || strings.TrimSpace(out) != "hlm · ctx — · 5h — · 7d —" {
 		t.Fatalf("code=%d out=%q", code, out)
 	}
 }
@@ -82,3 +84,35 @@ func TestStatuslineThenChains(t *testing.T) {
 func itoa(n int64) string { return strconvFormat(n) }
 
 func strconvFormat(n int64) string { return strconv.FormatInt(n, 10) }
+
+func TestRenamedNoticeOnlyForPeople(t *testing.T) {
+	var b bytes.Buffer
+	RenamedNotice([]string{"step", "x"}, &b)
+	RenamedNotice([]string{"hook"}, &b)
+	if b.Len() != 0 {
+		t.Fatal("agents' calls must stay silent")
+	}
+	RenamedNotice([]string{"open"}, &b)
+	if !strings.Contains(b.String(), "hlm init") {
+		t.Fatal(b.String())
+	}
+}
+
+func TestAdoptNewNameLinksHlm(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("copies instead")
+	}
+	// The test binary stands in for an old "trk": hlm appears next to it, once.
+	exe, _ := os.Executable()
+	dst := filepath.Join(filepath.Dir(exe), "hlm")
+	os.Remove(dst)
+	t.Cleanup(func() { os.Remove(dst) })
+	var b bytes.Buffer
+	if got := AdoptNewName(&b); got != dst || !strings.Contains(b.String(), "added") {
+		t.Fatal(got, b.String())
+	}
+	b.Reset()
+	if AdoptNewName(&b); b.Len() != 0 {
+		t.Fatal("linked twice")
+	}
+}

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/model"
+	"github.com/GujaLomsadze/helm/internal/model"
 )
 
 func capture(t *testing.T) *[]model.Envelope {
@@ -57,7 +57,7 @@ func TestParseProgress(t *testing.T) {
 
 func TestReportingVerbs(t *testing.T) {
 	got := capture(t)
-	t.Setenv("TRK_SESSION", "")
+	t.Setenv("HLM_SESSION", "")
 	for _, args := range [][]string{
 		{"start", "Refactor", "--steps", "5"}, {"step", "Writing tests"}, {"progress", "3/5"},
 		{"blocked", "Drop legacy topic?"}, {"done", "Tests green"},
@@ -77,9 +77,9 @@ func TestReportingVerbs(t *testing.T) {
 	}
 }
 
-func TestTrkSessionEnv(t *testing.T) {
+func TestHlmSessionEnv(t *testing.T) {
 	got := capture(t)
-	t.Setenv("TRK_SESSION", "my-sess")
+	t.Setenv("HLM_SESSION", "my-sess")
 	run("step", "x")
 	if e := (*got)[0]; e.SessionID != "my-sess" || e.SessionVia != "env" {
 		t.Fatalf("envelope = %+v", e)

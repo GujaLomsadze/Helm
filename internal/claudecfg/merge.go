@@ -8,17 +8,20 @@ import (
 )
 
 var (
-	trkHookRe   = regexp.MustCompile(`(?:^|[\s/\\"'])trk(?:\.exe)?["']?\s+hook(?:\s|$)`)
-	trkStatusRe = regexp.MustCompile(`(?:^|[\s/\\"'])trk(?:\.exe)?["']?\s+statusline(?:\s|$)`)
+	// Helm's hooks and status line, and TRK's (Helm's old name): init rewrites those to hlm.
+	hlmHookRe   = regexp.MustCompile(`(?:^|[\s/\\"'])(?:hlm|trk)(?:\.exe)?["']?\s+hook(?:\s|$)`)
+	hlmStatusRe = regexp.MustCompile(`(?:^|[\s/\\"'])(?:hlm|trk)(?:\.exe)?["']?\s+statusline(?:\s|$)`)
+	// the program part of a status-line command that runs TRK or Helm, up to "statusline"
+	ownStatusRe = regexp.MustCompile(`^\s*(?:'[^']*'|"[^"]*"|\S+)\s+statusline`)
 )
 
-// HookEvents are the Claude Code hook events trk init registers.
+// HookEvents are the Claude Code hook events hlm init registers.
 var HookEvents = []string{
 	"SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PostToolUse",
 	"PostToolUseFailure", "PermissionRequest", "Notification", "Stop", "SubagentStop", "PreCompact",
 }
 
-func MergeHooks(root *Object, trkCmd string) (bool, error) {
+func MergeHooks(root *Object, hlmCmd string) (bool, error) {
 	var hooks *Object
 	switch v, ok := root.Get("hooks"); {
 	case !ok || v == nil:
@@ -31,7 +34,7 @@ func MergeHooks(root *Object, trkCmd string) (bool, error) {
 		}
 		hooks = h
 	}
-	want := trkCmd + " hook"
+	want := hlmCmd + " hook"
 	changed := false
 	for _, ev := range HookEvents {
 		var groups []any
@@ -42,7 +45,7 @@ func MergeHooks(root *Object, trkCmd string) (bool, error) {
 			}
 			groups = arr
 		}
-		found, updated := updateTrkHook(groups, want)
+		found, updated := updateHlmHook(groups, want)
 		changed = changed || updated
 		if found {
 			continue
@@ -60,7 +63,7 @@ func MergeHooks(root *Object, trkCmd string) (bool, error) {
 	return changed, nil
 }
 
-func updateTrkHook(groups []any, want string) (found, updated bool) {
+func updateHlmHook(groups []any, want string) (found, updated bool) {
 	for _, g := range groups {
 		gObj, ok := g.(*Object)
 		if !ok {
@@ -75,7 +78,7 @@ func updateTrkHook(groups []any, want string) (found, updated bool) {
 			}
 			cv, _ := hObj.Get("command")
 			cmd, _ := cv.(string)
-			if !trkHookRe.MatchString(cmd) {
+			if !hlmHookRe.MatchString(cmd) {
 				continue
 			}
 			found = true
@@ -108,12 +111,12 @@ func ExistingStatusCommand(root *Object) string {
 	return cmd
 }
 
-func MergeStatusLine(root *Object, trkCmd string, chain bool) (StatusAction, error) {
+func MergeStatusLine(root *Object, hlmCmd string, chain bool) (StatusAction, error) {
 	v, ok := root.Get("statusLine")
 	if !ok || v == nil {
 		sl := NewObject()
 		sl.Set("type", "command")
-		sl.Set("command", trkCmd+" statusline")
+		sl.Set("command", hlmCmd+" statusline")
 		root.Set("statusLine", sl)
 		return StatusAdded, nil
 	}
@@ -122,12 +125,20 @@ func MergeStatusLine(root *Object, trkCmd string, chain bool) (StatusAction, err
 		return StatusKept, nil
 	}
 	cmd := ExistingStatusCommand(root)
-	if trkStatusRe.MatchString(cmd) {
+	if hlmStatusRe.MatchString(cmd) {
+		// Ours already. Point it at this binary (TRK's old path, a moved install), keeping
+		// whatever it chains after "statusline".
+		if loc := ownStatusRe.FindStringIndex(cmd); loc != nil {
+			if want := hlmCmd + " statusline" + cmd[loc[1]:]; want != cmd {
+				sl.Set("command", want)
+				return StatusAdded, nil
+			}
+		}
 		return StatusPresent, nil
 	}
 	if cmd == "" || !chain {
 		return StatusKept, nil
 	}
-	sl.Set("command", trkCmd+" statusline --then "+ShellQuote(cmd))
+	sl.Set("command", hlmCmd+" statusline --then "+ShellQuote(cmd))
 	return StatusChained, nil
 }

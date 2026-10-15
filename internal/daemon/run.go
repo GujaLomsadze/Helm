@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/GujaLomsadze/helm/internal/config"
 	"io"
 	"log"
 	"net"
@@ -14,12 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GujaLomsadze/trk/internal/fleet"
-	"github.com/GujaLomsadze/trk/internal/gitinfo"
-	"github.com/GujaLomsadze/trk/internal/store"
+	"github.com/GujaLomsadze/helm/internal/fleet"
+	"github.com/GujaLomsadze/helm/internal/gitinfo"
+	"github.com/GujaLomsadze/helm/internal/store"
 )
 
-var ErrAlreadyRunning = errors.New("trk daemon already running")
+var ErrAlreadyRunning = errors.New("hlm daemon already running")
 
 type Options struct {
 	MaxDBBytes int64 // trim oldest events past this size; 0 = no cap
@@ -27,6 +28,10 @@ type Options struct {
 	DataDir    string
 	Logger     *log.Logger
 	OnListen   func(addr string)
+	// Prepare runs once the port is bound (so no other daemon owns the data) and before the
+	// store opens; serve uses it to move TRK's old data folder and open the log. Its logger,
+	// when not nil, replaces Logger.
+	Prepare func() (*log.Logger, error)
 }
 
 // Run binds first (the port is the single-instance lock), then opens the store,
@@ -37,16 +42,26 @@ func Run(ctx context.Context, o Options) error {
 	}
 	ln, err := net.Listen("tcp", o.Addr)
 	if err != nil {
-		if isTrk(o.Addr) {
+		if isHlm(o.Addr) {
 			return ErrAlreadyRunning
 		}
 		return fmt.Errorf("listen %s: %w", o.Addr, err)
+	}
+	if o.Prepare != nil {
+		lg, err := o.Prepare()
+		if err != nil {
+			ln.Close()
+			return err
+		}
+		if lg != nil {
+			o.Logger = lg
+		}
 	}
 	if err := os.MkdirAll(o.DataDir, 0o755); err != nil {
 		ln.Close()
 		return err
 	}
-	st, err := store.Open(filepath.Join(o.DataDir, "trk.db"))
+	st, err := store.Open(filepath.Join(o.DataDir, "hlm.db"))
 	if err != nil {
 		ln.Close()
 		return err
@@ -57,15 +72,15 @@ func Run(ctx context.Context, o Options) error {
 	if err := restore(st, fl, time.Now().UnixMilli()); err != nil {
 		o.Logger.Printf("restore: %v", err) // degrade to empty state, keep serving
 	}
-	pidFile := filepath.Join(o.DataDir, "trk.pid")
+	pidFile := filepath.Join(o.DataDir, "hlm.pid")
 	_ = os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0o644)
 	defer os.Remove(pidFile)
 
 	ctx, stopAll := context.WithCancel(ctx)
 	defer stopAll()
 	srv := NewServer(st, fl, o.Logger)
-	defer srv.CloseTerminals()                        // dashboard-started agents end with the daemon
-	if c := os.Getenv("TRK_AGENT_COMMAND"); c != "" { // testing: run something other than claude
+	defer srv.CloseTerminals()                     // dashboard-started agents end with the daemon
+	if c := config.Env("AGENT_COMMAND"); c != "" { // testing: run something other than claude
 		srv.terms.Command = c
 	}
 	if v, ok, err := st.Setting(settingTerminals); err == nil && ok {
@@ -93,7 +108,7 @@ func Run(ctx context.Context, o Options) error {
 			hs.Close() // SSE connections never go idle
 		}
 	}()
-	o.Logger.Printf("trk listening on http://%s", ln.Addr())
+	o.Logger.Printf("hlm listening on http://%s", ln.Addr())
 	if o.OnListen != nil {
 		o.OnListen(ln.Addr().String())
 	}
@@ -134,7 +149,7 @@ func restore(st *store.Store, fl *fleet.Fleet, now int64) error {
 	return nil
 }
 
-func isTrk(addr string) bool {
+func isHlm(addr string) bool {
 	c := http.Client{Timeout: 500 * time.Millisecond}
 	resp, err := c.Get("http://" + addr + "/healthz")
 	if err != nil {
@@ -142,7 +157,7 @@ func isTrk(addr string) bool {
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return strings.Contains(string(b), `"app":"trk"`)
+	return strings.Contains(string(b), `"app":"hlm"`) || strings.Contains(string(b), `"app":"trk"`) // trk: before the rename
 }
 
 // trimLoop keeps the database under its size cap: once at startup, then hourly.

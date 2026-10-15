@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/helm/internal/agent"
 )
 
 func TestIsTTYRejectsDevNull(t *testing.T) {
@@ -24,20 +24,20 @@ func TestRenderInitReport(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	settings, md := home+"/.claude/settings.json", home+"/.claude/CLAUDE.md"
 	r := agent.InstallResult{Steps: []agent.InstallStep{
-		{Label: "Hooks", State: agent.StepAdded, Detail: settings, Backup: settings + ".trk-backup-1"},
-		{Label: "Status line", State: agent.StepAdded, Detail: "chained — ccstatusline still shows, unchanged", Backup: settings + ".trk-backup-1"},
-		{Label: "CLAUDE.md", State: agent.StepAdded, Detail: md, Backup: md + ".trk-backup-1"},
+		{Label: "Hooks", State: agent.StepAdded, Detail: settings, Backup: settings + ".hlm-backup-1"},
+		{Label: "Status line", State: agent.StepAdded, Detail: "chained — ccstatusline still shows, unchanged", Backup: settings + ".hlm-backup-1"},
+		{Label: "CLAUDE.md", State: agent.StepAdded, Detail: md, Backup: md + ".hlm-backup-1"},
 	}, Next: []string{"Restart your Claude Code sessions (hooks load at session start)"}}
 	var b bytes.Buffer
 	renderInit(&b, ui{}, "Claude Code", r, false, true, 7777)
 	out := b.String()
-	for _, want := range []string{"connected to Claude Code", "Hooks", "~/.claude/settings.json", "ccstatusline", "~/.claude/settings.json.trk-backup-1",
-		"Next", "Restart", "trk open", "http://localhost:7777"} {
+	for _, want := range []string{"connected to Claude Code", "Hooks", "~/.claude/settings.json", "ccstatusline", "~/.claude/settings.json.hlm-backup-1",
+		"Next", "Restart", "hlm open", "http://localhost:7777"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Count(out, "settings.json.trk-backup-1") != 1 {
+	if strings.Count(out, "settings.json.hlm-backup-1") != 1 {
 		t.Errorf("backup listed twice:\n%s", out)
 	}
 	if strings.Contains(out, "\x1b[") {
@@ -45,7 +45,7 @@ func TestRenderInitReport(t *testing.T) {
 	}
 	b.Reset()
 	renderInit(&b, ui{}, "Codex", r, true, false, 7777)
-	if !strings.Contains(b.String(), "dry run") || strings.Contains(b.String(), "Restart") || !strings.Contains(b.String(), "trk init --agent codex") {
+	if !strings.Contains(b.String(), "dry run") || strings.Contains(b.String(), "Restart") || !strings.Contains(b.String(), "hlm init --agent codex") {
 		t.Errorf("dry-run report:\n%s", b.String())
 	}
 }

@@ -1,12 +1,20 @@
 "use strict";
-// The agents TRK knows (GET /v1/agents), their glyphs, and the agent filter shared by
+// The agents Helm knows (GET /v1/agents), their glyphs, and the agent filter shared by
 // Fleet and Stats. Nothing here names an agent: names, labels, icons and abilities all
 // come from the daemon. Until a second agent has been used, every page looks as it did
 // with Claude Code alone: no glyphs, no filter.
-window.TRKAgentKit = (() => {
+// Helm was called TRK: carry this browser's saved settings over once (trk.* → hlm.*).
+try {
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith("trk.") && localStorage.getItem("hlm." + k.slice(4)) == null) localStorage.setItem("hlm." + k.slice(4), localStorage.getItem(k));
+  }
+} catch { /* storage off */ }
+
+window.HelmAgentKit = (() => {
   let list = [];
   let loading = null;
-  const FILTER_KEY = "trk.agentFilter";
+  const FILTER_KEY = "hlm.agentFilter";
 
   function load() {
     loading = fetch("/v1/agents")
@@ -19,7 +27,7 @@ window.TRKAgentKit = (() => {
   const get = (name) => list.find((a) => a.name === name);
   const fallback = () => list[0] || null; // the daemon lists the default agent first
   const label = (name) => (get(name) || {}).label || (name ? name : "Agent");
-  // Sessions only reporting through `trk step` have no agent; they count as "other".
+  // Sessions only reporting through `hlm step` have no agent; they count as "other".
   const key = (s) => s.agent || "";
 
   // multi: a second agent is in use, by its sessions now or in the last 30 days.
@@ -88,7 +96,7 @@ window.TRKAgentKit = (() => {
     wrap.append(btn("", ["All"].concat(num(sessions ? sessions.length : null) || [])));
     const text = (t) => { const s = document.createElement("span"); s.className = "lbl"; s.textContent = t; return s; };
     for (const n of names) wrap.append(btn(n, [glyph(n), text(label(n))].concat(num(count(n)) || []), "Show only " + label(n)));
-    if (others) wrap.append(btn("other", [glyph(""), text("Other")].concat(num(count("other")) || []), "Sessions that only report progress (trk step)"));
+    if (others) wrap.append(btn("other", [glyph(""), text("Other")].concat(num(count("other")) || []), "Sessions that only report progress (hlm step)"));
     wrap.addEventListener("click", (e) => {
       const b = e.target.closest("button[data-agent]");
       if (!b) return;

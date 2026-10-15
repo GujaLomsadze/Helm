@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TRK.EXE · UI inventory</title>
+<title>HELM.EXE · UI inventory</title>
 <link rel="stylesheet" href="theme.css">
 <style>
   /* The inventory's own layout only; everything it shows is styled by theme.css. */
@@ -28,7 +28,7 @@
 <body>
 <header class="hdr panel">
   <div class="brand">
-    <h1 class="title">TRK.EXE</h1>
+    <h1 class="title">HELM.EXE</h1>
     <div class="sub">UI inventory · every token and component, from fixtures</div>
   </div>
   <nav class="nav" aria-label="views">
@@ -49,14 +49,14 @@
   <section class="panel ui-sec"><h2>Controls</h2>
     <div class="ui-row" id="ui-controls"></div></section>
   <section class="panel ui-sec"><h2>Cards</h2>
-    <p>The Fleet card renderer with fixture sessions: every status, Claude Code and Codex, and a session that only reports through trk step.</p>
+    <p>The Fleet card renderer with fixture sessions: every status, Claude Code and Codex, and a session that only reports through hlm step.</p>
     <div class="ui-cards" id="ui-cards"></div></section>
   <section class="panel ui-sec"><h2>Timeline</h2><div class="ui-row" id="ui-timeline"></div></section>
 </main>
 <!-- app.js expects these at load; the inventory doesn't use them -->
 <div hidden><section id="grid"></section><button id="power" type="button"></button><div id="agent-filter"></div></div>
 <section class="timeline" hidden></section>
-<script>window.TRK_FIXTURES = true;</script>
+<script>window.HLM_FIXTURES = true;</script>
 <script src="agentkit.js"></script>
 <script src="app.js"></script>
 <script src="ui.js"></script>
