@@ -1,4 +1,4 @@
-<h1 align="center">HELM</h1>
+<p align="center"><img src="docs/img/logo.png" alt="Helm" width="600"></p>
 
 <p align="center">
   <b>Mission control for your coding agents.</b><br>
