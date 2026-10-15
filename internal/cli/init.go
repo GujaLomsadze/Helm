@@ -84,7 +84,11 @@ func renderOthers(w io.Writer, u ui, done string) {
 		}
 		if l, err := a.Launch(agent.LaunchSpec{}); err == nil {
 			if _, err := exec.LookPath(l.Exe); err == nil {
-				fmt.Fprintf(w, "  %s %s is installed too: %s\n\n", u.dim("·"), a.Label(), u.accent("trk init --agent "+a.Name()))
+				cmd := "trk init"
+				if a.Name() != agent.Default {
+					cmd += " --agent " + a.Name()
+				}
+				fmt.Fprintf(w, "  %s %s is installed too: %s\n\n", u.dim("·"), a.Label(), u.accent(cmd))
 			}
 		}
 	}
