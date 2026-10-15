@@ -104,6 +104,9 @@ func TestAdoptNewNameLinksHlm(t *testing.T) {
 	}
 	// The test binary stands in for an old "trk": hlm appears next to it, once.
 	exe, _ := os.Executable()
+	if real, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = real // macOS: the temp dir under /var is really /private/var
+	}
 	dst := filepath.Join(filepath.Dir(exe), "hlm")
 	os.Remove(dst)
 	t.Cleanup(func() { os.Remove(dst) })

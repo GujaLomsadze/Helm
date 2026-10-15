@@ -4,7 +4,7 @@ A local, single-binary tracker that shows, live, what every coding agent on your
 
 Helm shows two things side by side: **declared intent** (`hlm step "writing tests"`) and **ground truth** (every tool call, permission prompt and context % that Claude Code reports through hooks). The gap between them is the useful part, e.g. *"says step 3/5 writing tests; reality: pytest failed 14× in 6 min"*.
 
-> **Helm was called TRK** (command `trk`). Coming from TRK? `trk update` brings you here, then run `hlm init` once: it moves your hooks, status line and CLAUDE.md block over to `hlm`. Your history moves to Helm's data folder on its own, and `trk` keeps working as an alias for now. Old `TRK_*` environment variables are still read.
+> **Helm was called TRK** (command `trk`). Coming from TRK? `trk update` brings you here, then run `hlm init` once: it moves your hooks, status line and CLAUDE.md block over to `hlm`. Your history moves to Helm's data folder on its own, and `trk` keeps working as an alias for now. Old `TRK_*` environment variables are still read. On TRK v0.2.0, `trk update` can't follow the repo's rename (it says HTTP 301): run the install command below once instead.
 
 ## Install
 
