@@ -20,10 +20,13 @@
   </nav>
 </header>
 <main class="stats-page">
+  <h2 class="agent-head" id="lim-default-head" hidden></h2>
   <section class="panel chart-panel" id="c5" aria-label="5-hour limit"></section>
   <section class="panel chart-panel" id="c7" aria-label="weekly limit"></section>
+  <div class="stats-page" id="agent-limits" aria-live="polite"></div>
 </main>
 <div class="scanlines" aria-hidden="true"></div>
+<script src="agentkit.js"></script>
 <script src="limits.js"></script>
 </body>
 </html>

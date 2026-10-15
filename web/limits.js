@@ -328,3 +328,51 @@ connect();
 setInterval(() => { for (const id in CHARTS) if (hovering !== id) render(id); }, 30e3);
 let rz;
 addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { for (const id in CHARTS) render(id); }, 100); });
+
+// ---------- other agents ----------
+// The charts above are the default agent's (its status line keeps a history). Any other agent
+// that can read its plan usage gets a section below with its current windows, once it has
+// been used. Readings come from GET /v1/agents/{name}/limits, which the daemon caches.
+const kit = window.TRKAgentKit;
+const agentLim = {};
+async function loadAgentLimits() {
+  const agents = await kit.load();
+  const multi = kit.multi([]), def = kit.fallback();
+  const head = $("lim-default-head");
+  head.hidden = !multi || !def;
+  if (multi && def) head.replaceChildren(kit.glyph(def.name), def.label, h("small", null, "from status-line readings"));
+  const readers = agents.filter((a) => a.limits && a.seen);
+  await Promise.all(readers.map(async (a) => {
+    try {
+      const r = await fetch("/v1/agents/" + encodeURIComponent(a.name) + "/limits");
+      if (!r.ok) throw new Error();
+      agentLim[a.name] = await r.json();
+    } catch {
+      agentLim[a.name] = { ...(agentLim[a.name] || {}), stale: true, error: "Can't reach TRK. Start it with `trk open`, then reload." };
+    }
+  }));
+  $("agent-limits").replaceChildren(...readers.map(agentSection));
+}
+
+function agentSection(a) {
+  const v = agentLim[a.name] || {}, wins = v.windows || [];
+  const when = v.updated_at ? (v.stale ? "stale · last reading " : "updated ") + hm(v.updated_at) : "no reading yet";
+  const tile = (w) => {
+    const ended = w.reset_at && w.reset_at <= now();
+    const known = w.used_pct != null && !ended;
+    const pct = known ? Math.round(w.used_pct) : null;
+    return h("div", { class: "tile" }, h("span", { class: "lab" }, w.label),
+      h("span", { class: "num" + (known ? " c-" + tone3(pct) : "") }, known ? [pct, h("small", null, "%")] : "—"),
+      h("span", { class: "sub2" }, ended ? "window ended; waiting for a new reading" : w.reset_at ? "resets in " + dur(w.reset_at - now()) + " · " + dayhm(w.reset_at) : "reset not reported"));
+  };
+  return h("section", { class: "panel chart-panel", "aria-label": a.label + " plan usage" },
+    h("div", { class: "chart-head" }, h("h2", { class: "agent-head" }, kit.glyph(a.name), a.label, h("small", null, "current reading · " + when))),
+    v.error ? h("p", { class: "c-yellow", role: "status" }, v.error) : null,
+    wins.length ? h("div", { class: "tiles agent-tiles" }, wins.map(tile))
+      : h("div", { class: "empty-note" }, h("b", null, "No usage windows"), a.label + " returned none. Check that its CLI is installed and signed in."),
+    h("p", { class: "meta" }, "Shared by every session on this sign-in. Refreshes once a minute while this page is open; there is no history yet."));
+}
+
+loadAgentLimits();
+setInterval(() => { if (!document.hidden) loadAgentLimits(); }, 60e3);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadAgentLimits(); });

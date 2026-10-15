@@ -9,7 +9,7 @@ import (
 )
 
 func TestAssetsEmbedded(t *testing.T) {
-	for _, p := range []string{"index.html", "app.js", "editor.js", "theme.css", "limits.html", "limits.js", "limits.css", "stats.html", "stats.js", "stats.css", "term.html", "term.js", "agents.js", "vendor/xterm.js", "vendor/xterm.css", "vendor/addon-fit.js", "vendor/LICENSE-xterm.txt", "fonts/VT323-Regular.ttf", "fonts/IBMPlexMono-Regular.ttf", "fonts/IBMPlexMono-SemiBold.ttf"} {
+	for _, p := range []string{"index.html", "app.js", "editor.js", "theme.css", "limits.html", "limits.js", "limits.css", "stats.html", "stats.js", "stats.css", "term.html", "term.js", "agents.js", "agentkit.js", "ui.html", "ui.js", "icons/claude.svg", "icons/codex.svg", "vendor/xterm.js", "vendor/xterm.css", "vendor/addon-fit.js", "vendor/LICENSE-xterm.txt", "fonts/VT323-Regular.ttf", "fonts/IBMPlexMono-Regular.ttf", "fonts/IBMPlexMono-SemiBold.ttf"} {
 		if _, err := fs.Stat(FS, p); err != nil {
 			t.Errorf("missing %s: %v", p, err)
 		}
@@ -44,7 +44,7 @@ func TestAssetsEmbedded(t *testing.T) {
 
 // Agent-supplied text must never be parsed as HTML.
 func TestNoInnerHTML(t *testing.T) {
-	for _, f := range []string{"app.js", "editor.js", "limits.js", "stats.js", "term.js", "agents.js", "term.html"} {
+	for _, f := range []string{"app.js", "editor.js", "limits.js", "stats.js", "term.js", "agents.js", "agentkit.js", "ui.js", "term.html"} {
 		js, _ := os.ReadFile(f)
 		if regexp.MustCompile(`innerHTML|outerHTML|insertAdjacentHTML|document\.write`).Match(js) {
 			t.Fatalf("%s uses an HTML-parsing sink", f)
@@ -171,5 +171,47 @@ func TestTerminalsWiring(t *testing.T) {
 	app, _ := os.ReadFile("app.js")
 	if !strings.Contains(string(app), "TRKAgents.openSession(") {
 		t.Error("cards do not open the agent drawer")
+	}
+}
+
+// Colours live in theme.css's :root, so a second theme is one more token set. No hex colour
+// outside :root; the rgba() tints still written inline may not grow (move them to tokens).
+func TestColoursAreTokens(t *testing.T) {
+	rgbaBudget := map[string]int{"theme.css": 47, "limits.css": 11, "stats.css": 6, "ui.html": 0, "term.html": 0}
+	root := regexp.MustCompile(`(?s):root\s*\{[^}]*\}`)
+	hex := regexp.MustCompile(`#[0-9A-Fa-f]{3,8}\b`)
+	rgba := regexp.MustCompile(`rgba?\(`)
+	for f, budget := range rgbaBudget {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		css := root.ReplaceAllString(string(b), "")
+		if f != "theme.css" { // pages: only their <style> blocks
+			var styles []string
+			for _, m := range regexp.MustCompile(`(?s)<style>(.*?)</style>`).FindAllStringSubmatch(css, -1) {
+				styles = append(styles, m[1])
+			}
+			if strings.HasSuffix(f, ".html") {
+				css = strings.Join(styles, "\n")
+			}
+		}
+		if m := hex.FindAllString(css, -1); len(m) > 0 {
+			t.Errorf("%s: hex colours outside :root %v: make them tokens", f, m)
+		}
+		if n := len(rgba.FindAllString(css, -1)); n > budget {
+			t.Errorf("%s: %d inline rgba() colours, budget %d: add a token instead", f, n, budget)
+		}
+	}
+}
+
+// The dashboard learns agents from GET /v1/agents; only the inventory's fixtures name them.
+func TestDashboardNamesNoAgent(t *testing.T) {
+	re := regexp.MustCompile(`["'](claude|codex)["']`)
+	for _, f := range []string{"app.js", "agents.js", "agentkit.js", "limits.js", "stats.js", "editor.js", "term.js"} {
+		b, _ := os.ReadFile(f)
+		if m := re.FindString(string(b)); m != "" {
+			t.Errorf("%s names an agent: %s", f, m)
+		}
 	}
 }

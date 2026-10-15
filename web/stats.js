@@ -71,9 +71,22 @@ function buildPalette(repos) {
 }
 const groupOf = (repo) => palette.find((g) => g.members.includes(repo));
 
+// Agent filter: shared with Fleet, shown once a second agent is in use.
+const kit = window.TRKAgentKit;
+let multi = false;
+function drawAgentFilter() {
+  $("agent-filter").hidden = $("agent-lab").hidden = !multi;
+  if (multi) $("agent-filter").replaceChildren(kit.filterControl(null, () => { repoOff = new Set(); drawAgentFilter(); load(); }, "agent-seg st-agents"));
+}
+// Agents that don't report cost or tokens show a dash in the table, not a made-up zero.
+const counted = (s) => { const a = s.agent && kit.get(s.agent); return !a || a.counters; };
+const unk = (s, what) => h("span", { class: "unk", title: kit.label(s.agent) + " doesn't report " + what }, "—");
+const agentParam = () => { const f = multi ? kit.filter() : ""; return f && f !== "other" ? f : ""; };
+
 async function load() {
   $("state").textContent = "○ loading";
   const q = new URLSearchParams({ days, tz: new Date().getTimezoneOffset() });
+  if (agentParam()) q.set("agent", agentParam());
   if (repoOff.size) q.set("repos", palette.filter((g) => !repoOff.has(g.key)).flatMap((g) => g.members).join(","));
   try {
     const r = await fetch("/v1/stats?" + q);
@@ -347,13 +360,14 @@ function drawSessions() {
     const g = groupOf(s.repo);
     return h("tr", null, h("td", { title: s.id }, s.name), h("td", null, when(s.first)),
       h("td", null, h("i", { class: "st-sw", style: "background:var(" + (g ? g.color : "--r-other") + ");margin-right:6px" }), s.repo),
-      h("td", null, s.model || "—"), h("td", { class: "num" }, dur(s.duration / 1000)), h("td", { class: "num" }, money(s.spend)), h("td", { class: "num" }, tok(s.tokens)),
+      h("td", null, s.model || "—"), h("td", { class: "num" }, dur(s.duration / 1000)), h("td", { class: "num" }, counted(s) ? money(s.spend) : unk(s, "cost")), h("td", { class: "num" }, counted(s) ? tok(s.tokens) : unk(s, "tokens")),
       h("td", { class: "num" }, Math.round(s.waitShare * 100) + "%"),
       h("td", { class: "num", style: s.peak_ctx != null ? "color:" + ctxColor(s.peak_ctx) : null }, s.peak_ctx != null ? Math.round(s.peak_ctx) + "%" : "—"));
   }, (k) => { sesSort = [k, sesSort[0] === k ? -sesSort[1] : -1]; drawSessions(); });
 }
 
 $("host").textContent = location.host;
+kit.load().then(() => { multi = kit.multi([]); drawAgentFilter(); if (agentParam()) load(); else if (res) render(); });
 load();
 setInterval(() => { if (tip.hidden) load(); }, 60e3); // history: a refresh a minute is plenty
 let rz;

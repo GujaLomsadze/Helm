@@ -16,6 +16,7 @@
   <div class="stats" id="stats"></div>
   <div class="limits" id="limits"></div>
   <nav class="nav" aria-label="views">
+    <div id="agent-filter" hidden></div>
     <a class="btn btn-secondary active" href="./" aria-current="page">Fleet</a>
     <a class="btn btn-secondary" href="limits.html">Limits</a>
     <a class="btn btn-secondary" href="stats.html">Stats</a>
@@ -39,7 +40,7 @@
 <div class="stopped" id="stopped" hidden>
   <div class="panel stopped-box" role="status">
     <h2>TRK stopped</h2>
-    <p>Claude keeps working normally; nothing is recorded while TRK is off.</p>
+    <p>Your agents keep working normally; nothing is recorded while TRK is off.</p>
     <p>Start it again from a terminal:</p>
     <code>trk open</code>
   </div>
@@ -67,9 +68,9 @@
         <span class="ag-font-n" data-font-n title="Terminal font size · double-click to reset">14px</span>
         <button class="btn btn-secondary" type="button" data-font="1" aria-label="Larger terminal text" title="Larger text">A+</button>
       </div>
-      <button class="btn btn-secondary" id="ag-resume" type="button" hidden title="Start claude again on this conversation">↻ Resume</button>
+      <button class="btn btn-secondary" id="ag-resume" type="button" hidden title="Start the agent again on this conversation">↻ Resume</button>
       <button class="btn btn-secondary" id="ag-pop" type="button" hidden title="Move this terminal to its own window">Pop out ↗</button>
-      <button class="btn btn-secondary" id="ag-stop" type="button" hidden>Stop claude</button>
+      <button class="btn btn-secondary" id="ag-stop" type="button" hidden>Stop agent</button>
       <button class="btn btn-secondary" id="ag-close" type="button" aria-label="Close (agents keep running)" title="Close (agents keep running)">✕</button>
     </div>
   </div>
@@ -78,6 +79,7 @@
 </dialog>
 <script src="vendor/xterm.js"></script>
 <script src="vendor/addon-fit.js"></script>
+<script src="agentkit.js"></script>
 <script src="app.js"></script>
 <script src="editor.js"></script>
 <script src="term.js"></script>

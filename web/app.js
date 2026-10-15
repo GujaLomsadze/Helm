@@ -6,6 +6,7 @@ let skew = 0; // server clock - local clock
 const DASH = "—";
 const $ = (id) => document.getElementById(id);
 const now = () => Date.now() + skew;
+const kit = window.TRKAgentKit;
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -73,8 +74,9 @@ const money = (v) => "$" + (v || 0).toFixed(2);
 
 const CHIP = {
   working: ["WORKING", "work"], waiting: ["WAITING ON YOU", "warn"], blocked: ["BLOCKED", "red"],
-  looping: ["LOOPING?", "warn"], idle: ["IDLE", "done"], done: ["DONE", "ok"],
+  looping: ["LOOPING?", "warn"], idle: ["IDLE", "done"], done: ["DONE", "ok"], interrupted: ["INTERRUPTED", "done"],
 };
+const QUIET = ["idle", "done", "interrupted"];
 const NEED_LABEL = { permission: "permission", question: "question", blocked: "blocked" };
 
 function renderHeader(v) {
@@ -192,7 +194,7 @@ function fitRows() {
 addEventListener("resize", fitRows);
 
 const lastTop = new Map(); // session_id -> newest tool line seen
-const mark = (st) => (st === "ok" ? "✓" : st === "fail" ? "✗" : "…");
+const mark = (st) => (st === "ok" ? "✓" : st === "fail" ? "✗" : st === "unknown" ? "?" : "…");
 
 // Each widget renders into a slot with a reserved height, so every card has the same shape.
 const RENDER = {
@@ -230,11 +232,11 @@ const RENDER = {
     : h("div", { class: "w-prompt ghost" }, h("div", { class: "w-who" }, "You"), h("div", { class: "w-txt clamp2" }, "no prompt yet")),
   // the reply is the result: shown once the agent has stopped
   reply: (s) => {
-    const stopped = s.status === "done" || s.status === "idle";
+    const stopped = QUIET.includes(s.status), who = kit.label(s.agent || (multi ? "" : (kit.fallback() || {}).name)); // unknown agent: "Agent"
     if (s.last_reply && stopped) {
-      return h("div", { class: "w-reply" }, h("div", { class: "w-who" }, "Claude"), h("div", { class: "w-txt clamp2", title: s.last_reply }, s.last_reply));
+      return h("div", { class: "w-reply" }, h("div", { class: "w-who" }, who), h("div", { class: "w-txt clamp2", title: s.last_reply }, s.last_reply));
     }
-    return h("div", { class: "w-reply ghost" }, h("div", { class: "w-who" }, "Claude"),
+    return h("div", { class: "w-reply ghost" }, h("div", { class: "w-who" }, who),
       h("div", { class: "w-txt clamp2" }, s.status === "working" || s.status === "looping" ? "working…" : stopped ? "no reply yet" : "waiting on you"));
   },
   lines: (s) => {
@@ -262,14 +264,21 @@ const RENDER = {
       bg ? [n ? " · " : "", h("span", { class: "w-bg" }, bg + " in background")] : null);
   },
 };
+// An agent that doesn't report cost or tokens shows a dash, never a made-up $0.00.
+const unreported = (s, what) => {
+  const a = s.agent && kit.get(s.agent);
+  return a && !a.counters ? h("span", { class: "unk", title: a.label + " doesn't report " + what }, what + " " + DASH) : null;
+};
 const FOOT = {
   elapsed: (s) => h("span", { class: "live-elapsed", "data-since": s.started_at }, "elapsed " + dur(now() - s.started_at)),
-  tokens: (s) => h("span", null, tokens((s.tokens_in || 0) + (s.tokens_out || 0)) + " tok"),
-  cost: (s) => h("span", null, money(s.cost_usd)),
+  tokens: (s) => unreported(s, "tokens") || h("span", null, tokens((s.tokens_in || 0) + (s.tokens_out || 0)) + " tok"),
+  cost: (s) => unreported(s, "cost") || h("span", null, money(s.cost_usd)),
   model: (s) => h("span", null, s.model || DASH),
   last: (s) => h("span", { class: "live-last", "data-since": s.last_event_at }, "last " + dur(now() - s.last_event_at)),
   calls: (s) => h("span", null, (s.tool_calls || 0) + " calls"),
 };
+
+let multi = false; // a second agent is in use: cards show whose they are, the nav a filter
 
 function card(s) {
   const [label, tone] = CHIP[s.status] || CHIP.working;
@@ -282,10 +291,10 @@ function card(s) {
     "aria-label": s.name + ", " + label.toLowerCase() + ". Press Enter to open its agent drawer" },
     // ✕ sits left of the name so the status chip keeps the same spot on every card
     h("div", { class: "card-head" },
-      s.status === "idle" || s.status === "done"
+      QUIET.includes(s.status)
         ? h("button", { class: "dismiss", type: "button", "data-dismiss": s.session_id, "aria-label": "Hide " + s.name, title: "Hide this card (it comes back if the session gets busy again)" }, "✕")
         : null,
-      h("div", { class: "head-text" }, h("h3", { class: "card-name one", title: s.auto_name ? `${s.name} (${s.auto_name})` : s.name }, s.name),
+      h("div", { class: "head-text" }, h("h3", { class: "card-name one", title: s.auto_name ? `${s.name} (${s.auto_name})` : s.name }, multi ? kit.glyph(s.agent || "") : null, s.name),
         h("div", { class: "meta one", title: where }, s.in_trk ? h("span", { class: "in-trk", title: "Running in a TRK terminal" }, "⌨ ") : null, where || DASH)),
       // WORKING: light runs through the letters (the text needs its own box for background-clip)
       h("span", { class: "chip chip-" + tone }, tone === "work" ? h("span", { class: "shine" }, label) : label)),
@@ -299,9 +308,12 @@ const cards = new Map(); // session_id -> { sig, el }
 
 function renderGrid(v) {
   const grid = $("grid");
-  if (!v.sessions.length) {
+  const sessions = shown(v);
+  if (!sessions.length) {
     cards.clear();
-    grid.replaceChildren(h("div", { class: "panel empty" }, "No agents yet. Start Claude Code (after `trk init`) or run `trk start \"task\"`."));
+    grid.replaceChildren(h("div", { class: "panel empty" }, v.sessions.length
+      ? "No " + kit.label(kit.filter()) + " sessions right now. Pick All above to see every agent."
+      : "No agents yet. Connect one with `trk init` (Claude Code) or `trk init --agent codex`, or run `trk start \"task\"`."));
     return;
   }
   grid.querySelector(".empty")?.remove();
@@ -309,7 +321,7 @@ function renderGrid(v) {
   // sessions in a live TRK terminal: linked by pid (running) or started with --resume (terminals)
   const inTRK = new Set(Object.entries(v.running || {}).filter(([, t]) => t).map(([sid]) => sid));
   for (const t of v.terminals || []) if (!t.exited && t.session_id) inTRK.add(t.session_id);
-  v.sessions.forEach((s, i) => {
+  sessions.forEach((s, i) => {
     seen.add(s.session_id);
     if (inTRK.has(s.session_id)) s = { ...s, in_trk: true };
     const sig = JSON.stringify(s);
@@ -351,7 +363,7 @@ function renderTimeline(v) {
   const x = (t) => ((Math.max(start, Math.min(end, t)) - start) / span) * 100;
   const axis = h("div", { class: "tl-track tl-axis-track" });
   for (let m = 30; m >= 0; m -= 5) axis.append(h("span", { class: "tl-tick", style: `left:${x(end - m * 60000)}%` }, m ? `-${m}m` : "now"));
-  const lanes = v.sessions.map((s) => {
+  const lanes = shown(v).map((s) => {
     const track = h("div", { class: "tl-track" });
     for (const b of s.timeline || []) {
       const l = x(b.start), r = x(b.end || end);
@@ -368,8 +380,24 @@ function renderTimeline(v) {
 // Keep page content clear of the docked timeline.
 new ResizeObserver(([e]) => { document.body.style.setProperty("--dock-h", e.target.offsetHeight + "px"); fitRows(); }).observe(document.querySelector(".timeline"));
 
+// shown: the sessions the agent filter lets through (all of them until a second agent is in use).
+const shown = (v) => (multi ? v.sessions.filter(kit.keep) : v.sessions);
+
+function renderFilter(v) {
+  const box = $("agent-filter");
+  box.hidden = !multi;
+  if (!multi) return;
+  const sig = JSON.stringify([kit.filter(), v.sessions.map((s) => s.agent || "")]);
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  box.replaceChildren(kit.filterControl(v.sessions, () => render()));
+}
+
 function render() {
   if (!view) return;
+  const m = kit.multi(view.sessions);
+  if (m !== multi) { multi = m; cards.clear(); $("grid").replaceChildren(); }
+  renderFilter(view);
   renderHeader(view);
   renderGrid(view);
   renderSide(view);
@@ -417,7 +445,7 @@ let stopped = false;
 $("power").addEventListener("click", async () => {
   const own = window.TRKAgents ? TRKAgents.running() : 0;
   const warn = own ? `\n\n${own} agent${own === 1 ? "" : "s"} started from the dashboard will be stopped (resume them later from their cards).` : "";
-  if (!confirm("Stop TRK?\n\nClaude keeps working; nothing is recorded until you run `trk open`." + warn)) return;
+  if (!confirm("Stop TRK?\n\nYour agents keep working; nothing is recorded until you run `trk open`." + warn)) return;
   try { await fetch("/v1/stop", { method: "POST" }); } catch { /* daemon may close the connection as it exits */ }
   stopped = true;
   $("stopped").hidden = false;
@@ -440,7 +468,23 @@ function connect() {
 addEventListener("pagehide", () => { if (es) { es.close(); es = null; } });
 addEventListener("pageshow", (e) => { if (e.persisted && !es && !stopped) connect(); });
 
-applyAreas();
-applyGrid();
-connect();
-setInterval(tick, 1000);
+// ui.html renders these components from fixtures, without a daemon.
+if (!window.TRK_FIXTURES) {
+  applyAreas();
+  applyGrid();
+  // Cards are keyed by their data; new agent info (labels, glyphs, abilities) must redraw them.
+  let known = "";
+  const agentsLoaded = (list) => {
+    const sig = JSON.stringify(list);
+    if (sig === known) return;
+    known = sig;
+    cards.clear();
+    $("grid").replaceChildren();
+    $("agent-filter").dataset.sig = "";
+    render();
+  };
+  kit.load().then(agentsLoaded);
+  setInterval(() => kit.load().then(agentsLoaded), 60000); // a newly used agent brings its controls
+  connect();
+  setInterval(tick, 1000);
+}

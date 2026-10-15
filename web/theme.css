@@ -35,6 +35,11 @@
   --font-read: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --font-deco: "VT323", "IBM Plex Mono", ui-monospace, monospace;
   --radius: 2px;
+  --shine: #FFFFFF;     /* the WORKING chip's highlight */
+  /* agent glyphs: the house coral for Claude Code, a cool ice-cyan for Codex, muted for the rest */
+  --agent-claude: #FF7A6B;
+  --agent-codex: #8CCFE0;
+  --agent-other: var(--muted);
   color-scheme: dark;
 }
 
@@ -62,7 +67,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .limits { display: grid; gap: 2px; min-width: 0; max-width: 100%; }
 .limit { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; }
 .limit-label { color: var(--muted); font-size: 12px; width: 2.2em; }
-.nav { display: flex; gap: 6px; margin-left: auto; }
+.nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
 .btn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: var(--radius);
   font: 19px/1 var(--font-deco); text-transform: uppercase; text-decoration: none; }
 .btn-primary { background: var(--accent); color: var(--accent-fg); border: 1px solid var(--accent); }
@@ -94,7 +99,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .chip-accent { background: var(--chip-accent-bg); color: var(--chip-accent-fg); }
 .chip-work { background: rgba(241,220,214,0.08); color: var(--work); text-shadow: 0 0 8px rgba(241,220,214,0.55); }
 /* WORKING shimmer (picked "D", 2026-10-06): a bright band sweeps through the ice-white letters */
-.chip-work .shine { background: linear-gradient(90deg, rgba(241,220,214,0.55) 0 40%, #fff 50%, rgba(241,220,214,0.55) 60% 100%);
+.chip-work .shine { background: linear-gradient(90deg, rgba(241,220,214,0.55) 0 40%, var(--shine) 50%, rgba(241,220,214,0.55) 60% 100%);
   background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 2.2s linear infinite; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -50% 0; } }
 @media (prefers-reduced-motion: reduce) { .chip-work .shine { background: none; color: var(--work); } }
@@ -113,6 +118,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .tool-name { color: var(--text); }
 .tool-fail .mark { color: var(--accent); }
 .tool-ok .mark { color: var(--chip-accent-fg); }
+.tool-unknown .mark { color: var(--muted); }
 
 /* context gauge + hints (user bands: 40 yellow, 60 red, hints at 50/70) */
 .ctx { border-top: 1px solid var(--rule-soft); padding-top: 6px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; } /* long hints ellipsize, not widen */
@@ -357,6 +363,12 @@ dialog.agents.resizing .ag-term { pointer-events: none; }
 .ag-form input, .ag-form textarea { background: var(--bg); color: var(--text); border: 1px solid var(--border); font: 14px var(--font-read); padding: 10px 12px; border-radius: var(--radius); width: 100%; }
 .ag-form textarea { min-height: 90px; resize: vertical; }
 .ag-recent { display: flex; flex-wrap: wrap; gap: 6px; }
+.ag-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.ag-pick button { display: grid; gap: 4px; text-align: left; background: var(--bg); border: 1px solid var(--border); color: var(--muted);
+  font: 12px var(--font-read); padding: 10px 12px; cursor: pointer; border-radius: var(--radius); min-height: 44px; }
+.ag-pick button b { display: flex; align-items: center; gap: 8px; font: 21px/1 var(--font-deco); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text); }
+.ag-pick button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--text); }
+.ag-pick button:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
 .ag-recent button { background: transparent; border: 1px solid var(--rule-soft); color: var(--muted); font: 12px var(--font-read); padding: 5px 8px; cursor: pointer; border-radius: var(--radius); }
 .ag-recent button:hover { color: var(--text); border-color: var(--border); }
 .ag-go { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
@@ -385,3 +397,29 @@ dialog.agents.resizing .ag-term { pointer-events: none; }
   background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0,0,0,0.16) 3px, transparent 4px); }
 .icon-btn { min-width: 44px; justify-content: center; padding: 0 10px; font-size: 22px; }
 .ico { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; filter: drop-shadow(0 0 4px rgba(255,90,74,0.55)); }
+
+/* ---- agents: glyphs and the agent filter (only shown once a second agent is in use) ---- */
+.glyph { display: inline-block; flex: none; width: var(--gs, 14px); height: var(--gs, 14px); vertical-align: -2px;
+  background: var(--gc, var(--agent-other)); -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat;
+  filter: drop-shadow(0 0 4px var(--gc, var(--agent-other))); }
+.glyph-muted { --gc: var(--muted) !important; filter: none; }
+.glyph-lg { --gs: 18px; }
+.glyph-text { width: auto; height: auto; background: none; -webkit-mask: none; mask: none; filter: none;
+  font: 15px/14px var(--font-deco); color: var(--gc, var(--agent-other)); }
+.card-name .glyph { margin-right: 7px; }
+.agent-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); align-self: center; }
+.agent-seg button { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 0; color: var(--muted);
+  font: 17px/1 var(--font-deco); text-transform: uppercase; letter-spacing: 0.06em; padding: 0 12px; min-height: 44px; cursor: pointer; }
+.agent-seg button + button { border-left: 1px solid var(--border); }
+.agent-seg button:hover { color: var(--text); }
+.agent-seg button[aria-pressed="true"] { color: var(--chip-accent-fg); background: var(--chip-accent-bg); }
+.agent-seg button:focus-visible { outline: 1px solid var(--accent); outline-offset: -3px; }
+.agent-seg .n { opacity: 0.7; }
+.agent-seg .glyph { --gs: 13px; }
+.unk { color: var(--cell-off); }
+.unk[title] { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+.agent-head { display: flex; align-items: center; gap: 10px; font: 24px/1 var(--font-deco); letter-spacing: 0.06em; margin: 0; }
+.agent-head .glyph { --gs: 18px; }
+.agent-head small { font: 13px var(--font-read); color: var(--muted); letter-spacing: 0; text-transform: none; }
+@media (max-width: 600px) { .agent-seg .lbl { display: none; } } /* glyph + count; the label is in the tooltip */
+@media (max-width: 600px) { #agent-filter { flex-basis: 100%; display: flex; justify-content: flex-end; } #agent-filter[hidden] { display: none; } }

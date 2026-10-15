@@ -2,12 +2,14 @@ package daemon
 
 import (
 	"context"
+	"io/fs"
 	"net/http"
 	"os/exec"
 	"sync"
 	"time"
 
 	"github.com/GujaLomsadze/trk/internal/agent"
+	"github.com/GujaLomsadze/trk/web"
 )
 
 // agentsSeenWindow: an agent counts as "in use" (and gets its UI) after a session in this long.
@@ -21,6 +23,7 @@ type agentInfo struct {
 	Limits    bool   `json:"limits"`    // /v1/agents/{name}/limits can read its plan usage
 	Counters  bool   `json:"counters"`  // reports cost and tokens
 	Resume    string `json:"resume"`    // resume command, with {id} for the native session id
+	Icon      bool   `json:"icon"`      // web/icons/<name>.svg exists
 }
 
 // getAgents lists every adapter for the dashboard: which agents to show and what each can do.
@@ -41,9 +44,14 @@ func (s *Server) getAgents(w http.ResponseWriter, r *http.Request) {
 			available = err == nil
 		}
 		out = append(out, agentInfo{Name: a.Name(), Label: a.Label(), Seen: seen[a.Name()], Available: available,
-			Limits: limits, Counters: a.Caps().Counters, Resume: a.ResumeCommand("{id}")})
+			Limits: limits, Counters: a.Caps().Counters, Resume: a.ResumeCommand("{id}"), Icon: hasIcon(a.Name())})
 	}
 	writeJSON(w, out)
+}
+
+func hasIcon(name string) bool {
+	_, err := fs.Stat(web.FS, "icons/"+name+".svg")
+	return err == nil
 }
 
 const (

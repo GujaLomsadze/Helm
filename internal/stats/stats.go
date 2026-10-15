@@ -107,6 +107,7 @@ type Session struct {
 	Name    string   `json:"name"`
 	Repo    string   `json:"repo"`
 	Model   string   `json:"model"`
+	Agent   string   `json:"agent,omitempty"`
 	First   int64    `json:"first"`
 	Last    int64    `json:"last"`
 	Spend   float64  `json:"spend"`
@@ -161,7 +162,7 @@ func Compute(in Input) Result {
 		a := sess[sid]
 		if a == nil {
 			m := in.Meta[sid]
-			a = &acc{Session: Session{ID: sid, Name: m.Name, Repo: repoOf(sid), Model: m.Model}}
+			a = &acc{Session: Session{ID: sid, Name: m.Name, Repo: repoOf(sid), Model: m.Model, Agent: m.Agent}}
 			if a.Name == "" {
 				a.Name = a.Repo
 			}

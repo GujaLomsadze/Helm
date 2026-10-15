@@ -78,3 +78,4 @@ body { padding-bottom: 16px; font-size: 15px; }
 .gap { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 2 4; opacity: 0.6; }
 .empty-note { color: var(--muted); font-size: 15px; padding: 28px 4px; }
 .empty-note b { display: block; font: 30px/1 var(--font-deco); color: var(--text); text-transform: uppercase; margin-bottom: 8px; }
+.agent-tiles { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }

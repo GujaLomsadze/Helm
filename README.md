@@ -1,6 +1,6 @@
 # TRK
 
-A local, single-binary tracker that shows, live, what every coding agent on your machine is doing: progress, status, context usage, plan limits, and which agents need a human. Agents report through a tiny CLI; Claude Code hooks and the status line report automatically. A browser dashboard (phosphor CRT theme) shows the whole fleet.
+A local, single-binary tracker that shows, live, what every coding agent on your machine is doing: progress, status, context usage, plan limits, and which agents need a human. Agents report through a tiny CLI; Claude Code and Codex hooks report automatically. A browser dashboard (phosphor CRT theme) shows the whole fleet.
 
 TRK shows two things side by side: **declared intent** (`trk step "writing tests"`) and **ground truth** (every tool call, permission prompt and context % that Claude Code reports through hooks). The gap between them is the useful part, e.g. *"says step 3/5 writing tests; reality: pytest failed 14× in 6 min"*.
 
@@ -23,27 +23,44 @@ trk init     # add hooks + status line to ~/.claude/settings.json, add a CLAUDE.
 trk open     # open http://localhost:7777
 ```
 
+Using Codex too? `trk init --agent codex` (see [Codex](#codex)). `trk init` tells you when it finds Codex installed.
+
 Worried about your Claude setup? Read [How TRK works with Claude Code](#how-trk-works-with-claude-code-and-why-it-wont-break-it): it's observe-only, async, backed up and reversible.
 
 You never need to run `trk serve` yourself: the first `trk` call that finds no daemon starts one in the background.
+
+## Codex
+
+```sh
+trk init --agent codex --dry-run   # preview
+trk init --agent codex             # hooks in ~/.codex/hooks.json, progress block in ~/.codex/AGENTS.md
+```
+
+Then restart Codex and review the TRK hooks in its `/hooks` screen: Codex asks you to trust new hooks, and TRK never edits `config.toml` or trust settings for you. `CODEX_HOME` moves both files; `--instructions PATH` picks another AGENTS.md and `--no-instructions` skips it.
+
+What you get: a card per Codex session with its prompts, replies, tool calls (patches count every file they touch), permission prompts, interrupts and subagents, and `trk step` progress (Codex gives its commands their thread id, so no setup is needed). Collisions work across agents: a Claude edit and a Codex patch to one file show up together.
+
+What Codex doesn't report: cost and tokens per session, so its cards show `cost —` instead of a made-up `$0.00`. Your Codex plan usage (5-hour and weekly) is on the Limits page instead, read on demand from the Codex CLI you're signed in with.
+
+Once a second agent is in use, cards show whose they are (a small glyph), and Fleet and Stats get an agent filter. With only Claude Code, nothing changes.
 
 ## The dashboard
 
 Three pages, all at `http://localhost:7777`:
 
 - **Fleet:** one card per agent with its task, progress, status, context gauge, last prompt and reply, files touched and more. Cards glow by status (a pulsing amber card is waiting on you). Click a card to open its [agent drawer](#agents-in-the-dashboard). In the drawer, **✎** gives the card a title of your own. Titles are stored by TRK, so every browser shows them. **⚙ Card layout** picks the widgets, footer stats, grid size and which areas to show (Needs you and Collisions start hidden; the cards' chips already show both).
-- **Limits:** your 5-hour and weekly plan usage, one full-width chart each, with an "at this pace" projection. The verdict says **Perfect pace** within ±5% of the safe pace, **Good pace** with headroom, and **Slow down** only when you'd run out before the reset.
-- **Stats:** history for today, 7 or 30 days, filterable by repo. It shows spend per day by repo; where session time goes (model working, tools running, waiting on you); how long prompts wait for you; a weekday × hour activity grid; top tools with failures; the slowest commands; the most-touched files; how full each session's context got; and a sortable sessions table.
+- **Limits:** your 5-hour and weekly plan usage (Claude Code, and Codex below it when you use it), one full-width chart each, with an "at this pace" projection. The verdict says **Perfect pace** within ±5% of the safe pace, **Good pace** with headroom, and **Slow down** only when you'd run out before the reset.
+- **Stats:** history for today, 7 or 30 days, filterable by repo (and by agent, once you use more than one). It shows spend per day by repo; where session time goes (model working, tools running, waiting on you); how long prompts wait for you; a weekday × hour activity grid; top tools with failures; the slowest commands; the most-touched files; how full each session's context got; and a sortable sessions table.
 
 ## Agents in the dashboard
 
-TRK can also run Claude for you, in a terminal inside the dashboard. It's off until you turn it on in **⚙ Card layout → Terminals** (not available on native Windows; WSL works).
+TRK can also run Claude Code or Codex for you, in a terminal inside the dashboard. It's off until you turn it on in **⚙ Card layout → Terminals** (not available on native Windows; WSL works).
 
-- **+ Agent** opens the New agent form: a folder, an optional name for its card, and an optional first prompt. Claude runs in a terminal owned by TRK. Closing the drawer keeps it running; **Pop out ↗** moves it to its own window; **A− / A+** sets the terminal's font size.
+- **+ Agent** opens the New agent form: which agent (when more than one is installed), a folder, an optional name for its card, and an optional first prompt. The agent runs in a terminal owned by TRK; Codex runs with `--no-daemon`, so stopping it never touches Codex sessions TRK didn't start. Closing the drawer keeps it running; **Pop out ↗** moves it to its own window; **A− / A+** sets the terminal's font size.
 - **Click any card** to open its drawer:
   - running in TRK: its terminal.
   - running in another terminal (a tab, your editor): **Fork into TRK** continues a copy of the conversation (`claude --resume <id> --fork-session`) and leaves the original alone. **Take over** stays off while that claude runs, so two claudes never write to one conversation.
-  - not running: **Resume** continues it in TRK (`claude --resume <id>`).
+  - not running: **Resume** continues it in TRK (`claude --resume <id>`, `codex resume <id>`).
   - always: **New agent here** (fresh claude in the same folder) and **Copy resume command**.
 - Agents started in TRK stop when TRK stops, restarts or updates (`trk stop` and `trk update` say how many). Their conversations are saved: resume them from their cards.
 
@@ -106,6 +123,8 @@ All optional:
 | `TRK_SESSION` | — | Force which session CLI calls are attributed to |
 | `TRK_MAX_DB_MB` | `5120` | Database size cap. Past it, the oldest raw events are trimmed; session summaries stay |
 | `TRK_NO_UPDATE_CHECK` | — | Set to anything to stop `trk open` from checking GitHub for updates |
+| `TRK_CODEX_COMMAND` | `codex` on `PATH` | The Codex executable TRK starts and reads plan usage from |
+| `CODEX_HOME` | `~/.codex` | Where `trk init --agent codex` puts hooks.json and AGENTS.md (Codex's own variable) |
 
 ## How TRK works with Claude Code (and why it won't break it)
 
@@ -198,7 +217,10 @@ make clean         # remove bin/, dist/ and dev data
 ```
 
 The dashboard (`web/`) is embedded in the binary, so restart the daemon after changing it (`make stop demo`).
-To try dashboard terminals without starting real agents, run the dev daemon with `TRK_AGENT_COMMAND=bash`: terminals then run that program instead of `claude`.
+After a visual change, open `/ui.html` on the dev daemon: every colour token (with its contrast) and every component, from fixtures. Colours belong in `theme.css`'s `:root`; a test keeps them there.
+To try dashboard terminals without starting real agents, run the dev daemon with `TRK_AGENT_COMMAND=bash`: terminals then run that program instead of the agent.
+
+Each agent is an adapter in `internal/agent/<name>` (hooks → TRK's event schema, capabilities, installer, launch). The rest of TRK never names an agent; to add one, write an adapter, register it in `internal/agent/all` and drop its icon in `web/icons/<name>.svg`.
 
 ## License
 
