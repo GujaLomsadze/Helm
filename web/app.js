@@ -311,11 +311,18 @@ function renderGrid(v) {
   const sessions = shown(v);
   if (!sessions.length) {
     cards.clear();
-    grid.replaceChildren(h("div", { class: "panel empty" }, v.sessions.length
-      ? "No " + kit.label(kit.filter()) + " sessions right now. Pick All above to see every agent."
-      : "No agents yet. Connect one with `hlm init` (Claude Code) or `hlm init --agent codex`, or run `hlm start \"task\"`."));
+    const filtered = v.sessions.length > 0, canStart = !filtered && v.terminals_enabled && v.terminals_supported;
+    const key = filtered ? "f:" + kit.filter() : "none:" + canStart;
+    if (grid.dataset.emptyKey === key && grid.querySelector(".empty")) return; // keep the button (and its focus) across snapshots
+    grid.dataset.emptyKey = key;
+    grid.replaceChildren(filtered
+      ? h("div", { class: "panel empty" }, "No " + kit.label(kit.filter()) + " sessions right now. Pick All above to see every agent.")
+      : h("div", { class: "panel empty empty-hero" },
+        h("p", null, "No agents yet. Connect one with `hlm init` (Claude Code) or `hlm init --agent codex`, or run `hlm start \"task\"`."),
+        canStart ? h("button", { class: "btn btn-primary", type: "button", id: "empty-agent", "aria-haspopup": "dialog" }, "+ Agent") : null));
     return;
   }
+  delete grid.dataset.emptyKey;
   grid.querySelector(".empty")?.remove();
   const seen = new Set();
   // sessions in a live Helm terminal: linked by pid (running) or started with --resume (terminals)
@@ -430,6 +437,7 @@ $("grid").addEventListener("keydown", (e) => {
   }
 });
 $("grid").addEventListener("click", async (e) => {
+  if (e.target.closest("#empty-agent")) return $("agent-open").click(); // same New agent form as the header button
   const b = e.target.closest("[data-dismiss]");
   if (!b) {
     const c = e.target.closest("[data-open]");

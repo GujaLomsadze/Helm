@@ -14,9 +14,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Agents started from the dashboard, each running in a pty owned by the daemon. Off
-// unless the user turns it on in the Card layout drawer (stored server-side, so a page
-// can't enable it for itself). The same Host/Origin guard as every route applies.
+// Agents started from the dashboard, each running in a pty owned by the daemon. On
+// unless the user turns it off in the Card layout drawer (stored server-side). The same Host/Origin guard as every route applies.
 
 // settingTerminals keeps the key from when terminals were experimental, so the choice survives.
 const settingTerminals = "experimental_terminals"
@@ -31,6 +30,8 @@ type dashView struct {
 	// in, or "" when it runs somewhere else (a terminal tab, an IDE). Sessions in live Helm
 	// terminals always count; elsewhere only agents with PID attribution can be checked.
 	Running map[string]string `json:"running"`
+	// SavedDirs are the folders pinned in the New agent form.
+	SavedDirs []string `json:"saved_dirs"`
 }
 
 func (s *Server) dash() dashView {
@@ -41,7 +42,7 @@ func (s *Server) dash() dashView {
 	}
 	running := s.linkSessions(shown) // before List, so the terminals carry their session
 	return dashView{View: v, TerminalsEnabled: s.termsOn.Load(),
-		TerminalsSupported: term.Supported, Terminals: s.terms.List(), Running: running}
+		TerminalsSupported: term.Supported, Terminals: s.terms.List(), Running: running, SavedDirs: s.SavedDirs()}
 }
 
 // linkSessions finds the sessions still running and links each Helm terminal to the

@@ -33,14 +33,20 @@ func TestTerminals(t *testing.T) {
 	dir := t.TempDir()
 	spec := `{"dir":` + jsonStr(dir) + `}`
 
+	var view struct {
+		On bool `json:"terminals_enabled"`
+	}
+	if getJSON(t, ts.URL+"/v1/sessions", &view); !view.On {
+		t.Fatal("terminals should be on by default")
+	}
+	if r := postJSON(t, ts.URL+"/v1/settings", `{"terminals_enabled":false}`); r.StatusCode != http.StatusNoContent {
+		t.Fatalf("disable = %d", r.StatusCode)
+	}
 	if r := postJSON(t, ts.URL+"/v1/terms", spec); r.StatusCode != http.StatusForbidden {
 		t.Fatalf("start while off = %d, want 403", r.StatusCode)
 	}
 	if r := postJSON(t, ts.URL+"/v1/settings", `{"terminals_enabled":true}`); r.StatusCode != http.StatusNoContent {
 		t.Fatalf("enable = %d", r.StatusCode)
-	}
-	var view struct {
-		On bool `json:"terminals_enabled"`
 	}
 	getJSON(t, ts.URL+"/v1/sessions", &view)
 	if !view.On {

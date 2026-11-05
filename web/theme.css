@@ -85,6 +85,9 @@ ul { list-style: none; margin: 0; padding: 0; }
 @media (max-width: 700px) { .grid.fixed-cols { grid-template-columns: minmax(0, 1fr); } .grid.fixed-rows { grid-auto-rows: auto; } }
 .side { display: grid; gap: 16px; }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
+/* nothing tracked at all: the hint sits mid-screen with a "+ Agent" button under it */
+.empty-hero { grid-column: 1 / -1; min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+.empty-hero p { margin: 0; max-width: 60ch; }
 @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .nav { margin-left: 0; } }
 
 /* card */
@@ -363,6 +366,10 @@ dialog.agents.resizing .ag-term { pointer-events: none; }
 .ag-form input, .ag-form textarea { background: var(--bg); color: var(--text); border: 1px solid var(--border); font: 14px var(--font-read); padding: 10px 12px; border-radius: var(--radius); width: 100%; }
 .ag-form textarea { min-height: 90px; resize: vertical; }
 .ag-recent { display: flex; flex-wrap: wrap; gap: 6px; }
+.ag-dir-row { display: flex; gap: 8px; }
+.ag-dir-row input { flex: 1; min-width: 0; }
+.ag-pin { min-width: 44px; justify-content: center; padding: 0 10px; font-size: 18px; }
+.ag-pin[aria-pressed="true"], .ag-recent .ag-saved { color: var(--accent); }
 .ag-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
 .ag-pick button { display: grid; gap: 4px; text-align: left; background: var(--bg); border: 1px solid var(--border); color: var(--muted);
   font: 12px var(--font-read); padding: 10px 12px; cursor: pointer; border-radius: var(--radius); min-height: 44px; }

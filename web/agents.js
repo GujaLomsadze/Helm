@@ -202,16 +202,61 @@ window.HelmAgents = (function () {
   }
 
   function form(from) {
-    const seen = new Set(), dirs = [];
+    // folders: pinned ones (kept by the daemon) first, then where sessions ran, newest first
+    let saved = ((view && view.saved_dirs) || []).slice();
+    const seen = new Set(saved), recent = [];
     for (const s of [...((view && view.sessions) || [])].sort((a, b) => b.last_event_at - a.last_event_at)) {
-      if (s.cwd && !seen.has(s.cwd)) { seen.add(s.cwd); dirs.push(s.cwd); }
+      if (s.cwd && !seen.has(s.cwd)) { seen.add(s.cwd); recent.push(s.cwd); }
     }
     const on = enabled();
     const err = h("span", { class: "ag-err", role: "alert" });
-    const dir = h("input", { id: "ag-dir", list: "ag-dirs", autocomplete: "off", spellcheck: "false", value: (from && from.dir) || dirs[0] || "", placeholder: "/path/to/project" });
+    const dir = h("input", { id: "ag-dir", list: "ag-dirs", autocomplete: "off", spellcheck: "false", value: (from && from.dir) || saved[0] || recent[0] || "", placeholder: "/path/to/project" });
     const base = (d) => d.split("/").filter(Boolean).pop() || "";
     const name = h("input", { id: "ag-name", maxlength: "80", autocomplete: "off", spellcheck: "false", placeholder: base(dir.value) || "the folder's name" });
-    dir.addEventListener("input", () => { name.placeholder = base(dir.value) || "the folder's name"; });
+    const pin = h("button", { class: "btn btn-secondary ag-pin", type: "button" });
+    const list = h("datalist", { id: "ag-dirs" });
+    const chips = h("div", { class: "ag-recent" });
+    const norm = (d) => d.trim().replace(/\/+$/, "") || d.trim();
+    function drawDirs(found) {
+      const pinned = saved.includes(norm(dir.value));
+      pin.textContent = pinned ? "★" : "☆";
+      pin.title = pinned ? "Unpin this folder" : "Pin this folder: it stays in the list after restarts";
+      pin.setAttribute("aria-label", pin.title);
+      pin.setAttribute("aria-pressed", String(pinned));
+      list.replaceChildren(...[...new Set([...(found || []), ...saved, ...recent])].map((d) => h("option", { value: d })));
+      chips.replaceChildren(...saved.map((d) => h("button", { type: "button", class: "ag-saved", "data-dir": d, title: d + " (pinned)" }, "★ " + (base(d) || d))),
+        ...recent.slice(0, 8).map((d) => h("button", { type: "button", "data-dir": d, title: d }, base(d) || d)));
+      chips.hidden = !chips.children.length;
+    }
+    drawDirs();
+    // completes the folder being typed from the disk (the daemon lists matching subfolders)
+    let typed = 0, timer = 0;
+    dir.addEventListener("input", () => {
+      name.placeholder = base(dir.value) || "the folder's name";
+      drawDirs();
+      clearTimeout(timer);
+      const v = dir.value.trim(), n = ++typed;
+      if (!/^(\/|~)/.test(v)) return;
+      timer = setTimeout(async () => {
+        try {
+          const r = await fetch("/v1/dirs/complete?prefix=" + encodeURIComponent(v));
+          const found = r.ok ? await r.json() : [];
+          if (n === typed) drawDirs(found);
+        } catch { /* completion is a convenience */ }
+      }, 120);
+    });
+    pin.addEventListener("click", async () => {
+      const d = norm(dir.value), want = !saved.includes(d);
+      if (!d) return;
+      err.textContent = "";
+      try {
+        const r = await fetch("/v1/dirs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dir: d, saved: want }) });
+        if (!r.ok) throw new Error((await r.text()).trim());
+        saved = await r.json();
+        if (want && saved[0]) dir.value = saved[0]; // as stored: ~ expanded, no trailing slash
+        drawDirs();
+      } catch (x) { err.textContent = String(x.message || x); }
+    });
     const prompt = h("textarea", { id: "ag-prompt", placeholder: "optional, e.g. run the tests and fix what fails" });
     // Which agent: offered only when more than one can be started here; the last pick is remembered.
     const startable = kit.all().filter((a) => a.available);
@@ -224,10 +269,8 @@ window.HelmAgents = (function () {
     const f = h("form", { class: "ag-form" },
       from ? h("div", { class: "ag-from" }, "Folder from " + from.name) : null,
       chooser ? [h("span", { class: "ag-lab" }, "Agent"), chooser] : null,
-      h("label", { class: "ag-lab", for: "ag-dir" }, "Folder"), dir,
-      h("datalist", { id: "ag-dirs" }, dirs.map((d) => h("option", { value: d }))),
-      dirs.length ? h("div", { class: "ag-recent" }, dirs.slice(0, 8).map((d) =>
-        h("button", { type: "button", "data-dir": d, title: d }, d.split("/").filter(Boolean).pop() || d))) : null,
+      h("label", { class: "ag-lab", for: "ag-dir" }, "Folder ", h("span", { class: "ag-opt" }, "type a path for suggestions · ☆ pins it")),
+      h("div", { class: "ag-dir-row" }, dir, pin), list, chips,
       h("label", { class: "ag-lab", for: "ag-name" }, "Name ", h("span", { class: "ag-opt" }, "optional · shown on its card")), name,
       h("label", { class: "ag-lab", for: "ag-prompt" }, "First prompt"), prompt,
       h("div", { class: "ag-go" }, go, err),
@@ -237,7 +280,7 @@ window.HelmAgents = (function () {
         : "Terminals are off. Turn them on in ⚙ Card layout → Terminals."));
     f.addEventListener("click", (e) => {
       const b = e.target.closest("[data-dir]");
-      if (b) { dir.value = b.dataset.dir; name.placeholder = base(dir.value); }
+      if (b) { dir.value = b.dataset.dir; name.placeholder = base(dir.value); drawDirs(); }
       const a = e.target.closest("[data-agent]");
       if (a) {
         pick = a.dataset.agent;

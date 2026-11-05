@@ -36,9 +36,9 @@ Each card tracks the session's context window usage:
 
 ## Agents in the dashboard
 
-Helm can also run Claude Code or Codex for you, in a terminal inside the dashboard. It's off until you turn it on in **⚙ Card layout → Terminals** (not available on native Windows; WSL works).
+Helm can also run Claude Code or Codex for you, in a terminal inside the dashboard. It's on by default; turn it off in **⚙ Card layout → Terminals** (not available on native Windows; WSL works).
 
-- **+ Agent** opens the New agent form: which agent (when more than one is installed), a folder, an optional name for its card, and an optional first prompt. The agent runs in a terminal owned by Helm; Codex runs with `--no-daemon`, so stopping it never touches Codex sessions Helm didn't start. Closing the drawer keeps it running; **Pop out ↗** moves it to its own window; **A− / A+** sets the terminal's font size.
+- **+ Agent** opens the New agent form: which agent (when more than one is installed), a folder, an optional name for its card, and an optional first prompt. Typing a path suggests matching folders from disk; **☆** pins the folder so it's offered on every start, even after a restart (pinned folders show first, marked ★; click ★ again to unpin). The agent runs in a terminal owned by Helm; Codex runs with `--no-daemon`, so stopping it never touches Codex sessions Helm didn't start. Closing the drawer keeps it running; **Pop out ↗** moves it to its own window; **A− / A+** sets the terminal's font size.
 - **Click any card** to open its drawer:
   - running in Helm: its terminal.
   - running in another terminal (a tab, your editor): **Fork into Helm** continues a copy of the conversation (`claude --resume <id> --fork-session`) and leaves the original alone. **Take over** stays off while that claude runs, so two claudes never write to one conversation.
