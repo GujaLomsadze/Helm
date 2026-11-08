@@ -44,6 +44,23 @@ window.HelmTerm = (function () {
     const fit = new FitAddon.FitAddon();
     xterm.loadAddon(fit);
     xterm.open(el);
+    // xterm turns Ctrl+C/Ctrl+V into ^C/^V and cancels the key, so off-Mac the browser never
+    // copies or pastes. Hand those keys back to the browser: its native copy/paste events need
+    // no clipboard permission (Brave and Firefox restrict navigator.clipboard).
+    // Ctrl+C copies only with a selection (otherwise it's still ^C); Ctrl+Shift+C/V always.
+    xterm.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown" || !e.ctrlKey || e.altKey || e.metaKey) return true;
+      const k = e.code; // physical key, so non-Latin layouts work too
+      if (k === "KeyV") return false; // browser fires paste → xterm pastes it
+      if (k === "KeyC" &&(e.shiftKey || xterm.hasSelection())) {
+        if (e.shiftKey) { // Chromium binds Ctrl+Shift+C to the inspector, so copy by hand
+          e.preventDefault();
+          copySel(xterm.getSelection());
+        }
+        return false; // plain Ctrl+C: browser fires copy → xterm fills it
+      }
+      return true;
+    });
     let ws = null, closed = false, exited = false, retry = 0;
     const enc = new TextEncoder();
     const send = (d) => ws && ws.readyState === 1 && ws.send(d);
@@ -81,6 +98,24 @@ window.HelmTerm = (function () {
     return view;
   }
 
+  // copySel writes text to the clipboard, falling back to execCommand where the async API
+  // is missing or refused. Resolves true when it copied.
+  async function copySel(text) {
+    if (!text) return false;
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* missing or refused */ }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+    const back = document.activeElement;
+    document.body.append(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { /* nothing more to try */ }
+    ta.remove();
+    if (back && back.focus) back.focus();
+    return ok;
+  }
+
   async function stop(id) { await fetch("/v1/terms/" + encodeURIComponent(id), { method: "DELETE" }); }
 
   function popOut(t) {
@@ -99,5 +134,5 @@ window.HelmTerm = (function () {
     show();
   }
 
-  return { attach, stop, popOut, fontControl };
+  return { attach, stop, popOut, fontControl, copy: copySel };
 })();

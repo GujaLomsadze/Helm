@@ -311,8 +311,7 @@ window.HelmAgents = (function () {
 
   async function copyText(text, b) {
     const say = (msg) => { const d = b.querySelector(".ag-act-d"); if (d) d.textContent = msg; };
-    try { await navigator.clipboard.writeText(text); say("Copied."); }
-    catch { say("Couldn't copy; select the command below."); }
+    say(await HelmTerm.copy(text) ? "Copied." : "Couldn't copy; select the command below.");
   }
 
   // ---- width: drag the left edge (or focus it and use ←/→); remembered in this browser ----
