@@ -17,15 +17,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func postJSON(t *testing.T, url, body string) *http.Response {
-	t.Helper()
-	resp, err := http.Post(url, "application/json", strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return resp
-}
-
 func TestTerminals(t *testing.T) {
 	ts, srv := newTestServer(t)
 	srv.terms.Command = "cat"
@@ -187,8 +178,6 @@ func waitFor(t *testing.T, ok func() bool, what string) {
 		}
 	}
 }
-
-func jsonStr(s string) string { b, _ := json.Marshal(s); return string(b) }
 
 func TestCodexTerminalLinksByTerminalID(t *testing.T) {
 	ts, srv := newTestServer(t)

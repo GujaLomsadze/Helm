@@ -421,3 +421,14 @@ func TestStatsEndpoint(t *testing.T) {
 		}
 	}
 }
+
+func jsonStr(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+func postJSON(t *testing.T, url, body string) *http.Response {
+	t.Helper()
+	resp, err := http.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
