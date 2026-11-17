@@ -39,8 +39,10 @@ window.HelmTerm = (function () {
   // attach shows terminal `id` inside `el` and keeps it connected until dispose().
   // A dropped connection (lagging viewer, daemon hiccup) reconnects and replays the scrollback.
   function attach(el, id, { onExit, onState } = {}) {
+    // Agents that turn on mouse reporting (Claude Code does) get every drag, so a plain drag
+    // selects nothing: Shift+drag (Option+drag on a Mac) still selects here.
     const xterm = new Terminal({ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: fontSize(), cursorBlink: true,
-      scrollback: 5000, theme: THEME });
+      scrollback: 5000, theme: THEME, macOptionClickForcesSelection: true });
     const fit = new FitAddon.FitAddon();
     xterm.loadAddon(fit);
     xterm.open(el);
@@ -59,6 +61,14 @@ window.HelmTerm = (function () {
         }
         return false; // plain Ctrl+C: browser fires copy → xterm fills it
       }
+      return true;
+    });
+    // OSC 52: the agent's own copy (Claude Code copies what you select in it this way).
+    // Writes only; a read request ("?") is ignored so an agent can never see the clipboard.
+    xterm.parser.registerOscHandler(52, (data) => {
+      const b64 = data.slice(data.indexOf(";") + 1);
+      if (!b64 || b64 === "?") return true;
+      try { copySel(new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)))); } catch { /* not base64 */ }
       return true;
     });
     let ws = null, closed = false, exited = false, retry = 0;
@@ -107,7 +117,9 @@ window.HelmTerm = (function () {
     ta.value = text;
     ta.style.cssText = "position:fixed;opacity:0;pointer-events:none";
     const back = document.activeElement;
-    document.body.append(ta);
+    // Inside the open drawer: a modal <dialog> makes the rest of the page inert, and an inert
+    // textarea can't be selected, so execCommand would copy nothing.
+    ((back && back.closest && back.closest("dialog[open]")) || document.querySelector("dialog[open]") || document.body).append(ta);
     ta.select();
     let ok = false;
     try { ok = document.execCommand("copy"); } catch { /* nothing more to try */ }
