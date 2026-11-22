@@ -24,6 +24,8 @@ window.HelmAgents = (function () {
   const agentLabel = (x) => kit.label(agentOf(x));
   // spec for resuming or forking: the daemon wants the agent and its own session id
   const resumeSpec = (x, dir, fork) => ({ agent: agentOf(x), dir, resume: kit.native(asSession(x)), fork: fork || undefined });
+  // the launch profile a session ran with, when it still exists
+  const profileOf = (sid) => { const id = ((view && view.session_profiles) || {})[sid]; return id ? (view.profiles || []).find((p) => p.id === id) : null; };
   const shq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
   const resumeCmd = (s) => `cd ${shq(s.cwd)} && ${kit.resumeCommand(asSession(s))}`;
 
@@ -119,6 +121,10 @@ window.HelmAgents = (function () {
   const AGENT_KEY = "hlm.newAgent";
   function lastAgent() { try { return localStorage.getItem(AGENT_KEY) || ""; } catch { return ""; } }
   function setLastAgent(a) { try { localStorage.setItem(AGENT_KEY, a); } catch { /* per-browser convenience */ } }
+  const PROF_KEY = "hlm.newAgent.profile";
+  function lastProfile() { try { return localStorage.getItem(PROF_KEY) || ""; } catch { return ""; } }
+  function setLastProfile(id) { try { localStorage.setItem(PROF_KEY, id); } catch { /* per-browser convenience */ } }
+  const PF = window.HelmProfiles;
   const multiAgents = () => kit.multi((view && view.sessions) || []);
 
   function dropViewer() { if (viewer) { viewer.dispose(); viewer = null; } }
@@ -192,6 +198,7 @@ window.HelmAgents = (function () {
         h("dt", null, "folder"), h("dd", null, s.cwd || DASH),
         h("dt", null, "agent"), h("dd", null, multiAgents() ? kit.glyph(agentOf(s)) : null, multiAgents() ? " " : null, who),
         h("dt", null, "session"), h("dd", null, kit.native(asSession(s)) || sid),
+        profileOf(sid) ? [h("dt", null, "profile"), h("dd", null, PF.dot(profileOf(sid)), " ", profileOf(sid).name, h("span", { class: "meta" }, " · resume keeps it"))] : null,
         h("dt", null, "status"), h("dd", null, (CHIP[s.status] || [s.status])[0].toLowerCase(), " · last ",
           h("span", { class: "live-ago", "data-since": s.last_event_at }, dur(now() - s.last_event_at) + " ago"))),
       s.last_prompt ? h("div", { class: "w-prompt" }, h("div", { class: "w-who" }, "Last prompt"), h("div", { class: "w-txt clamp2" }, s.last_prompt)) : null,
@@ -266,9 +273,45 @@ window.HelmAgents = (function () {
     const chooser = startable.length > 1 ? h("div", { class: "ag-pick", role: "group", "aria-label": "Agent" }, startable.map((a) =>
       h("button", { type: "button", "data-agent": a.name, "aria-pressed": String(a.name === pick) },
         h("b", null, kit.glyph(a.name, { size: "lg" }), a.label), h("span", null, a.counters ? "cost and tokens on its card" : "activity only; usage on Limits")))) : null;
+    // Launch profile: which provider and key the agent runs with ("" = your own sign-in).
+    let prof = lastProfile(), cost = null;
+    const profLab = h("span", { class: "ag-lab" }, "Profile ", h("span", { class: "ag-opt" }, "which key it runs on · keys and spend on Usage"));
+    const profBox = h("div", { class: "ag-prof", role: "group", "aria-label": "Launch profile" });
+    const profWarn = h("div", { class: "ag-warn", role: "status" });
+    function drawProf() {
+      const ok = PF.supports(pick);
+      profLab.hidden = profBox.hidden = !ok;
+      profWarn.hidden = true;
+      if (!ok) return;
+      const list = [PF.NONE, ...PF.profiles(pick)];
+      if (!list.some((p) => p.id === prof)) prof = "";
+      const entry = (id) => cost && (cost.profiles || []).find((c) => c.id === id);
+      profBox.replaceChildren(...list.map((p) => {
+        const b = PF.budget(entry(p.id)), c = entry(p.id);
+        const sub = !p.id ? "plan limits apply" : b.budget ? PF.money(Math.max(0, b.budget - b.spent)) + " left of " + PF.money(b.budget)
+          : c ? PF.money(c.range_usd) + " in 30 days" : "no budget";
+        return h("button", { type: "button", "data-prof": p.id, "aria-pressed": String(p.id === prof), style: "--c:" + PF.color(p), title: PF.kind(p) },
+          h("span", { class: "n" }, PF.dot(p), h("span", { class: "one" }, p.name)),
+          b.pct != null ? h("span", { class: "prof-meter" }, h("i", { class: "t-" + PF.tone(b.pct), style: `width:${Math.min(100, b.pct).toFixed(1)}%` })) : null,
+          h("span", { class: "s" }, sub));
+      }), h("button", { type: "button", class: "ag-prof-add", "data-prof-add": "" }, "+ profile"));
+      const p = PF.byId(prof), b = PF.budget(entry(prof));
+      if (prof && b.pct != null && b.pct >= 80) {
+        profWarn.hidden = false;
+        profWarn.className = "ag-warn t-" + PF.tone(b.pct);
+        const reset = b.resetAt ? " (resets " + new Date(b.resetAt).toLocaleDateString("en", { month: "short", day: "numeric" }) + ")" : "";
+        profWarn.textContent = `${p.name} has used ${Math.round(b.pct)}% of its ${PF.money(b.budget)} budget${reset}. ` +
+          (b.source === "gateway" ? "The gateway stops requests when it runs out." : "That's Helm's estimate; the gateway's own limit is what stops requests.");
+      }
+    }
+    drawProf();
+    PF.load().then(drawProf);
+    PF.cost(30).then((c) => { cost = c; drawProf(); }).catch(() => { /* meters are a convenience */ });
+    PF.onChange(() => { if (profBox.isConnected) drawProf(); });
     const f = h("form", { class: "ag-form" },
       from ? h("div", { class: "ag-from" }, "Folder from " + from.name) : null,
       chooser ? [h("span", { class: "ag-lab" }, "Agent"), chooser] : null,
+      profLab, profBox, profWarn,
       h("label", { class: "ag-lab", for: "ag-dir" }, "Folder ", h("span", { class: "ag-opt" }, "type a path for suggestions · ☆ pins it")),
       h("div", { class: "ag-dir-row" }, dir, pin), list, chips,
       h("label", { class: "ag-lab", for: "ag-name" }, "Name ", h("span", { class: "ag-opt" }, "optional · shown on its card")), name,
@@ -287,13 +330,25 @@ window.HelmAgents = (function () {
         setLastAgent(pick);
         for (const x of f.querySelectorAll("[data-agent]")) x.setAttribute("aria-pressed", String(x === a));
         go.textContent = "Launch " + kit.label(pick);
+        drawProf();
+      }
+      const pb = e.target.closest("[data-prof]");
+      if (pb) { prof = pb.dataset.prof; setLastProfile(prof); drawProf(); }
+      if (e.target.closest("[data-prof-add]")) {
+        PF.edit(null, { agent: pick, onSaved: (p) => {
+          if (p) { prof = p.id; setLastProfile(prof); }
+          PF.cost(30, 0).then((c) => { cost = c; drawProf(); }).catch(() => {});
+          drawProf();
+        } });
       }
     });
     f.addEventListener("submit", async (e) => {
       e.preventDefault();
       err.textContent = "";
       go.disabled = true;
-      try { await launch({ agent: pick, dir: dir.value.trim(), prompt: prompt.value, title: name.value }); }
+      const spec = { agent: pick, dir: dir.value.trim(), prompt: prompt.value, title: name.value };
+      if (PF.supports(pick)) spec.profile = prof;
+      try { await launch(spec); }
       catch (x) { err.textContent = String(x.message || x); go.disabled = false; }
     });
     if (from) setTimeout(() => prompt.focus(), 50);

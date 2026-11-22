@@ -35,6 +35,7 @@
   --font-read: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --font-deco: "VT323", "IBM Plex Mono", ui-monospace, monospace;
   --radius: 2px;
+  --scrim: rgba(11,6,5,0.65); /* behind modal dialogs */
   --shine: #FFFFFF;     /* the WORKING chip's highlight */
   /* agent glyphs: the house coral for Claude Code, a cool ice-cyan for Codex, muted for the rest */
   --agent-claude: #FF7A6B;
@@ -430,3 +431,49 @@ dialog.agents.resizing .ag-term { pointer-events: none; }
 .agent-head small { font: 13px var(--font-read); color: var(--muted); letter-spacing: 0; text-transform: none; }
 @media (max-width: 600px) { .agent-seg .lbl { display: none; } } /* glyph + count; the label is in the tooltip */
 @media (max-width: 600px) { #agent-filter { flex-basis: 100%; display: flex; justify-content: flex-end; } #agent-filter[hidden] { display: none; } }
+
+/* launch profiles (profiles.js): editor dialog, New agent chips, card badge, Usage rows */
+dialog.pf-dlg { width: min(640px, calc(100vw - 24px)); max-height: calc(100vh - 32px); padding: 0; color: var(--text); overflow: auto; }
+dialog.pf-dlg::backdrop { background: var(--scrim); }
+.pf-form { display: grid; gap: 14px; padding: 16px; }
+.pf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.pf-lab { display: grid; gap: 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; align-content: start; }
+.pf-form input, .pf-form select { background: var(--bg); color: var(--text); border: 1px solid var(--border); font: 16px var(--font-read);
+  padding: 9px 11px; border-radius: var(--radius); width: 100%; min-height: 44px; text-transform: none; letter-spacing: 0; }
+.pf-hint { margin: -6px 0 0; }
+.pf-colors { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-swatch { width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; background: var(--c); cursor: pointer; box-shadow: 0 0 0 1px var(--border); }
+.pf-swatch[aria-checked="true"] { border-color: var(--text); box-shadow: 0 0 8px var(--c); }
+.pf-spend { border: 1px solid var(--rule-soft); padding: 10px 12px; margin: 0; display: grid; gap: 6px; }
+.pf-spend legend { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; padding: 0 4px; }
+.pf-radio { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; min-height: 40px; }
+.pf-radio input { width: 16px; min-height: 0; height: 16px; margin-top: 3px; accent-color: var(--accent); }
+.pf-radio small { display: block; color: var(--muted); font-size: 12px; }
+.pf-more summary { cursor: pointer; color: var(--muted); font-size: 13px; min-height: 32px; }
+.pf-extra { display: grid; gap: 8px; margin: 8px 0; }
+.pf-xrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 8px; }
+.pf-xdel { min-width: 44px; justify-content: center; padding: 0; }
+.pf-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-del { margin-left: auto; }
+.pf-err { color: var(--red); margin: 0; font-size: 13px; }
+.pf-err:empty, .pf-note:empty { display: none; }
+.pf-note { font-size: 13px; color: var(--muted); }
+.pf-note-ok { color: var(--ok); } .pf-note-warn { color: var(--yellow); }
+.pf-ask { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pf-ask .btn { min-height: 34px; }
+.pf-warn { border: 1px solid var(--yellow); color: var(--yellow); padding: 8px 10px; font-size: 12px; margin: 0; overflow-wrap: anywhere; }
+.prof-badge { display: inline-block; vertical-align: 2px; max-width: 14ch; margin-left: 8px; font: 600 11px/1.4 var(--font-read);
+  padding: 0 6px; border: 1px solid var(--c); color: var(--c); border-radius: var(--radius); }
+.prof-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; box-shadow: 0 0 6px var(--c); }
+.prof-meter { height: 4px; background: var(--track); overflow: hidden; }
+.prof-meter i { display: block; height: 100%; background: var(--ok); }
+.prof-meter i.t-yellow { background: var(--yellow); } .prof-meter i.t-red { background: var(--red); }
+.ag-prof { display: flex; flex-wrap: wrap; gap: 8px; }
+.ag-prof button { display: grid; gap: 4px; min-width: 132px; min-height: 52px; text-align: left; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); font: 13px var(--font-read); padding: 6px 10px 8px; cursor: pointer; border-radius: var(--radius); }
+.ag-prof button[aria-pressed="true"] { border-color: var(--c, var(--accent)); box-shadow: inset 0 0 0 1px var(--c, var(--accent)); }
+.ag-prof .n { display: flex; gap: 6px; align-items: center; }
+.ag-prof .s { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.ag-prof .ag-prof-add { min-width: 0; align-content: center; color: var(--chip-accent-fg); }
+.ag-warn { border: 1px solid var(--yellow); color: var(--yellow); padding: 8px 10px; font-size: 12px; }
+.ag-warn.t-red { border-color: var(--red); color: var(--red); }

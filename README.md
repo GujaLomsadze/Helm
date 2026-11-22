@@ -53,7 +53,7 @@ To update later: `hlm update`.
 
 | | |
 |---|---|
-| [The dashboard](docs/dashboard.md) | Fleet, Limits and Stats pages, statuses, context bands, running agents from the dashboard |
+| [The dashboard](docs/dashboard.md) | Fleet, Usage and Stats pages, statuses, context bands, running agents from the dashboard, launch profiles (gateways, API keys, budgets) |
 | [Claude Code](docs/claude-code.md) | What `hlm init` changes, why Helm can't slow down or break Claude, privacy, undo |
 | [Codex](docs/codex.md) | Connecting Codex, what it reports, plan usage |
 | [CLI and configuration](docs/cli.md) | Every command, agent progress verbs, the HTTP API, environment variables, WSL |

@@ -79,3 +79,26 @@ body { padding-bottom: 16px; font-size: 15px; }
 .empty-note { color: var(--muted); font-size: 15px; padding: 28px 4px; }
 .empty-note b { display: block; font: 30px/1 var(--font-deco); color: var(--text); text-transform: uppercase; margin-bottom: 8px; }
 .agent-tiles { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+/* API keys (usage.js): one row per launch profile, then spend over time */
+.keys-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.keys-tools .btn { min-height: 38px; }
+.keys { display: grid; }
+.key { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) auto 44px; gap: 8px 18px; align-items: center; padding: 12px 0; border-top: 1px solid var(--rule-soft); }
+.key:first-child { border-top: 0; }
+.key.deleted { opacity: 0.6; }
+.key-name { display: grid; gap: 2px; font-weight: 600; }
+.key .src { color: var(--muted); font-size: 13px; font-weight: 400; }
+.key-m { display: grid; gap: 6px; }
+.prof-meter.big { height: 10px; }
+.key-v { font: 40px/1 var(--font-deco); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; text-shadow: 0 0 10px currentColor; }
+.key-v small { font: 14px var(--font-read); color: var(--muted); text-shadow: none; }
+.key-edit { min-width: 44px; justify-content: center; padding: 0; }
+.keys-plot { height: 300px; }
+.tip > div { display: flex; gap: 6px; align-items: center; }
+@container (max-width: 640px) {
+  .key { grid-template-columns: minmax(0, 1fr) 44px; }
+  .key-v { grid-column: 1 / -1; order: 3; text-align: left; font-size: 32px; }
+  .key-m { grid-column: 1 / -1; order: 4; }
+}
+@media (max-width: 600px) { .keys-plot { height: 220px; } }

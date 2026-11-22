@@ -5,7 +5,7 @@
 Three pages, all at `http://localhost:7777`:
 
 - **Fleet:** one card per agent with its task, progress, status, context gauge, last prompt and reply, files touched and more. Cards glow by status (a pulsing amber card is waiting on you). Click a card to open its [agent drawer](#agents-in-the-dashboard). In the drawer, **✎** gives the card a title of your own. Titles are stored by Helm, so every browser shows them. **⚙ Card layout** picks the widgets, footer stats, grid size and which areas to show (Needs you and Collisions start hidden; the cards' chips already show both).
-- **Limits:** your 5-hour and weekly plan usage (Claude Code, and Codex below it when you use it), one full-width chart each, with an "at this pace" projection. The verdict says **Perfect pace** within ±5% of the safe pace, **Good pace** with headroom, and **Slow down** only when you'd run out before the reset.
+- **Usage:** your 5-hour and weekly plan usage (Claude Code, and Codex below it when you use it), one full-width chart each, with an "at this pace" projection. The verdict says **Perfect pace** within ±5% of the safe pace, **Good pace** with headroom, and **Slow down** only when you'd run out before the reset. Below them, **API keys**: spend per [launch profile](#launch-profiles) against its budget, and a chart of spend over 7, 30 or 90 days.
 - **Stats:** history for today, 7 or 30 days, filterable by repo (and by agent, once you use more than one). It shows spend per day by repo; where session time goes (model working, tools running, waiting on you); how long prompts wait for you; a weekday × hour activity grid; top tools with failures; the slowest commands; the most-touched files; how full each session's context got; and a sortable sessions table.
 
 ## Statuses
@@ -45,6 +45,18 @@ Helm can also run Claude Code or Codex for you, in a terminal inside the dashboa
   - not running: **Resume** continues it in Helm (`claude --resume <id>`, `codex resume <id>`).
   - always: **New agent here** (fresh claude in the same folder) and **Copy resume command**.
 - Agents started in Helm stop when Helm stops, restarts or updates (`hlm stop` and `hlm update` say how many). Their conversations are saved: resume them from their cards.
+
+## Launch profiles
+
+A launch profile starts Claude Code on a provider other than your own sign-in: your company's LLM gateway (LiteLLM, Portkey or any other), an Anthropic API key, Amazon Bedrock (API key, AWS profile or through a gateway) or Google Vertex through a gateway. **Custom** takes any environment variables you add. Nothing to install and no shell aliases: Helm sets the variables on the agents it starts.
+
+- **Add one** from **+ Agent → + profile** or **Usage → + Add profile**: a name, the type, its URL and key, an optional budget (USD over 30, 7 or 1 days, or since created) and a colour. **Extra variables** take anything else (`ANTHROPIC_MODEL`, `ANTHROPIC_CUSTOM_HEADERS`, …).
+- **Pick one** in the New agent form: one chip per profile with what's left of its budget, plus **My login** (your own sign-in). Helm remembers the last pick. Each card started with a profile shows its name; resuming or forking a session keeps its profile, so a company session never continues on your personal login.
+- **Keys** stay on this machine in `secrets.json` next to Helm's database (readable only by you). The dashboard never gets them back, only whether each one is set. To use a new key, **Duplicate with a new key**.
+- **Spend** is Claude Code's own cost estimate for the sessions that ran on the profile. On a LiteLLM gateway Helm can show the key's real spend and budget instead: when you save a gateway profile it asks the gateway's `/key/info` and offers to use those numbers (some gateways only let the admin key read them; then the estimate stays). The gateway's own budget wins over the one typed in Helm.
+- **Budget colours:** yellow from 80%, red from 100%. Helm warns in the New agent form but still starts the agent; the gateway enforces the real limit.
+- Agents get the profile's variables in place of your shell's own `ANTHROPIC_*` settings. Variables in the `env` block of `~/.claude/settings.json` (or an `apiKeyHelper` there) override any profile, because Claude Code applies them over the environment; the profile editor warns when it finds some.
+- Only agents started from the dashboard use profiles. A session you start in your own terminal runs on whatever that shell has.
 
 ## Several agents
 

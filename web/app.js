@@ -294,7 +294,8 @@ function card(s) {
       QUIET.includes(s.status)
         ? h("button", { class: "dismiss", type: "button", "data-dismiss": s.session_id, "aria-label": "Hide " + s.name, title: "Hide this card (it comes back if the session gets busy again)" }, "✕")
         : null,
-      h("div", { class: "head-text" }, h("h3", { class: "card-name one", title: s.auto_name ? `${s.name} (${s.auto_name})` : s.name }, multi ? kit.glyph(s.agent || "") : null, s.name),
+      h("div", { class: "head-text" }, h("h3", { class: "card-name one", title: s.auto_name ? `${s.name} (${s.auto_name})` : s.name }, multi ? kit.glyph(s.agent || "") : null, s.name,
+          s.profile && window.HelmProfiles ? HelmProfiles.badge(s.profile) : null),
         h("div", { class: "meta one", title: where }, s.in_hlm ? h("span", { class: "in-hlm", title: "Running in a Helm terminal" }, "⌨ ") : null, where || DASH)),
       // WORKING: light runs through the letters (the text needs its own box for background-clip)
       h("span", { class: "chip chip-" + tone }, tone === "work" ? h("span", { class: "shine" }, label) : label)),
@@ -331,6 +332,9 @@ function renderGrid(v) {
   sessions.forEach((s, i) => {
     seen.add(s.session_id);
     if (inHelm.has(s.session_id)) s = { ...s, in_hlm: true };
+    const pid = (v.session_profiles || {})[s.session_id];
+    const prof = pid && (v.profiles || []).find((p) => p.id === pid);
+    if (prof) s = { ...s, profile: { id: prof.id, name: prof.name, color: prof.color, preset: prof.preset, agent: prof.agent } };
     const sig = JSON.stringify(s);
     let c = cards.get(s.session_id);
     if (!c || c.sig !== sig) {
@@ -404,6 +408,7 @@ function render() {
   if (!view) return;
   const m = kit.multi(view.sessions);
   if (m !== multi) { multi = m; cards.clear(); $("grid").replaceChildren(); }
+  if (window.HelmProfiles) HelmProfiles.fromSnapshot(view.profiles);
   renderFilter(view);
   renderHeader(view);
   renderGrid(view);

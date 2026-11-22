@@ -208,7 +208,7 @@ func TestColoursAreTokens(t *testing.T) {
 // The dashboard learns agents from GET /v1/agents; only the inventory's fixtures name them.
 func TestDashboardNamesNoAgent(t *testing.T) {
 	re := regexp.MustCompile(`["'](claude|codex)["']`)
-	for _, f := range []string{"app.js", "agents.js", "agentkit.js", "limits.js", "stats.js", "editor.js", "term.js"} {
+	for _, f := range []string{"app.js", "agents.js", "agentkit.js", "limits.js", "stats.js", "editor.js", "term.js", "profiles.js", "usage.js"} {
 		b, _ := os.ReadFile(f)
 		if m := re.FindString(string(b)); m != "" {
 			t.Errorf("%s names an agent: %s", f, m)

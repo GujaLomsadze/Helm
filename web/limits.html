@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HELM · Limits</title>
+<title>HELM · Usage</title>
 <link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="limits.css">
 </head>
@@ -15,7 +15,7 @@
   </div>
   <nav class="nav" aria-label="views">
     <a class="btn btn-secondary" href="./">Fleet</a>
-    <a class="btn btn-secondary active" href="limits.html" aria-current="page">Limits</a>
+    <a class="btn btn-secondary active" href="limits.html" aria-current="page">Usage</a>
     <a class="btn btn-secondary" href="stats.html">Stats</a>
   </nav>
 </header>
@@ -24,9 +24,12 @@
   <section class="panel chart-panel" id="c5" aria-label="5-hour limit"></section>
   <section class="panel chart-panel" id="c7" aria-label="weekly limit"></section>
   <div class="stats-page" id="agent-limits" aria-live="polite"></div>
+  <section class="panel chart-panel" id="api-keys" aria-label="API keys and spend"></section>
 </main>
 <div class="scanlines" aria-hidden="true"></div>
 <script src="agentkit.js"></script>
 <script src="limits.js"></script>
+<script src="profiles.js"></script>
+<script src="usage.js"></script>
 </body>
 </html>
