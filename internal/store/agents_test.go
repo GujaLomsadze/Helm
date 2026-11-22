@@ -12,18 +12,30 @@ import (
 	"github.com/GujaLomsadze/helm/internal/model"
 )
 
+// agentsMigration is the index of the migration that added agents to the schema.
+func agentsMigration(t *testing.T) int {
+	for i, m := range migrations {
+		if strings.Contains(m, "ALTER TABLE sessions ADD COLUMN agent ") {
+			return i
+		}
+	}
+	t.Fatal("no agents migration")
+	return 0
+}
+
 func TestUpgradeTagsClaudeHistory(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "hlm.db")
 	db, err := sql.Open("sqlite", p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range migrations[:len(migrations)-1] { // the schema before agents existed
+	before := agentsMigration(t) // the schema before agents existed
+	for _, m := range migrations[:before] {
 		if _, err := db.Exec(m); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, q := range []string{fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-1),
+	for _, q := range []string{fmt.Sprintf(`PRAGMA user_version = %d`, before),
 		`INSERT INTO events(ts, session_id, source, kind, payload) VALUES(1,'c1','hook','prompt','{}'),(2,'c1','cli','step','{}'),(3,'x','cli','step','{}')`,
 		`INSERT INTO sessions(session_id, title) VALUES('c1','kept'),('x','')`} {
 		if _, err := db.Exec(q); err != nil {

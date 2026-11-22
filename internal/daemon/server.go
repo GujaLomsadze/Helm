@@ -40,6 +40,9 @@ type Server struct {
 	savedDirs []string // folders pinned in the New agent form, newest first
 	stats     statsCache
 	limits    limitsCache
+	prof      profileState
+	cost      costTracker
+	gw        gatewayCache
 	// OnShutdown stops the daemon; set by Run. Used by `hlm update` to restart into the new binary.
 	OnShutdown func()
 	// OnStop pauses Helm (hooks stop respawning it) and then shuts down; set by Run.
@@ -51,6 +54,9 @@ func NewServer(st *store.Store, fl *fleet.Fleet, logger *log.Logger) *Server {
 	s.terms.OnChange = func() { s.dirty.Store(true) }
 	s.termsOn.Store(true) // terminals are on unless the user turned them off (Run restores that)
 	s.loadSavedDirs()
+	s.loadProfiles()
+	s.cost.last = map[string]float64{}
+	s.gw.m = map[string]gwEntry{}
 	return s
 }
 
@@ -73,6 +79,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/agents", s.getAgents)
 	mux.HandleFunc("GET /v1/agents/{name}/limits", s.getAgentLimits)
 	mux.HandleFunc("GET /v1/stats", s.getStats)
+	mux.HandleFunc("GET /v1/profiles", s.listProfiles)
+	mux.HandleFunc("POST /v1/profiles", s.putProfile)
+	mux.HandleFunc("POST /v1/profiles/probe", s.probeGateway)
+	mux.HandleFunc("PUT /v1/profiles/{id}", s.putProfile)
+	mux.HandleFunc("DELETE /v1/profiles/{id}", s.deleteProfile)
+	mux.HandleFunc("GET /v1/cost", s.getCost)
 	mux.HandleFunc("GET /v1/stream", s.stream)
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("POST /v1/shutdown", s.shutdown)
@@ -134,6 +146,7 @@ func (s *Server) postEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "store error", http.StatusInternalServerError)
 		return
 	}
+	s.trackCost(ev)
 	sess := s.fl.Apply(ev, now)
 	if err := s.st.UpsertSession(sess); err != nil {
 		s.log.Printf("upsert session: %v", err)

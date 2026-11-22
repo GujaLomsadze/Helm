@@ -79,6 +79,9 @@ func Run(ctx context.Context, o Options) error {
 	ctx, stopAll := context.WithCancel(ctx)
 	defer stopAll()
 	srv := NewServer(st, fl, o.Logger)
+	if err := srv.OpenSecrets(filepath.Join(o.DataDir, "secrets.json")); err != nil {
+		o.Logger.Printf("launch profile keys: %v (profiles start without their keys)", err)
+	}
 	defer srv.CloseTerminals()                     // dashboard-started agents end with the daemon
 	if c := config.Env("AGENT_COMMAND"); c != "" { // testing: run something other than claude
 		srv.terms.Command = c

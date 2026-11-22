@@ -9,6 +9,7 @@ import (
 	"github.com/GujaLomsadze/helm/internal/agent"
 	"github.com/GujaLomsadze/helm/internal/derive"
 	"github.com/GujaLomsadze/helm/internal/fleet"
+	"github.com/GujaLomsadze/helm/internal/profile"
 	"github.com/GujaLomsadze/helm/internal/ptree"
 	"github.com/GujaLomsadze/helm/internal/term"
 	"github.com/gorilla/websocket"
@@ -32,6 +33,10 @@ type dashView struct {
 	Running map[string]string `json:"running"`
 	// SavedDirs are the folders pinned in the New agent form.
 	SavedDirs []string `json:"saved_dirs"`
+	// Profiles are the launch profiles (keys masked); SessionProfiles maps the shown
+	// sessions that ran with one to its id.
+	Profiles        []profile.Public  `json:"profiles"`
+	SessionProfiles map[string]string `json:"session_profiles"`
 }
 
 func (s *Server) dash() dashView {
@@ -42,7 +47,8 @@ func (s *Server) dash() dashView {
 	}
 	running := s.linkSessions(shown) // before List, so the terminals carry their session
 	return dashView{View: v, TerminalsEnabled: s.termsOn.Load(),
-		TerminalsSupported: term.Supported, Terminals: s.terms.List(), Running: running, SavedDirs: s.SavedDirs()}
+		TerminalsSupported: term.Supported, Terminals: s.terms.List(), Running: running, SavedDirs: s.SavedDirs(),
+		Profiles: s.publicProfiles(), SessionProfiles: s.sessionProfiles(shown)}
 }
 
 // linkSessions finds the sessions still running and links each Helm terminal to the
@@ -77,8 +83,11 @@ func (s *Server) linkSessions(only map[string]bool) map[string]string {
 		for _, t := range live {
 			if tb.Descends(pid, t.PID) {
 				owner = t.ID
-				if s.terms.Link(t.ID, sid) && t.Title != "" {
-					s.titleOnce(sid, t.Title) // the name typed in "+ New agent"
+				if s.terms.Link(t.ID, sid) {
+					s.tagSession(sid, t.Profile)
+					if t.Title != "" {
+						s.titleOnce(sid, t.Title) // the name typed in "+ New agent"
+					}
 				}
 				break
 			}
@@ -95,8 +104,11 @@ func (s *Server) linkTerminal(termID, sid string) {
 	if !s.terms.LinkFirst(termID, sid) {
 		return
 	}
-	if t, ok := s.terms.Get(termID); ok && t.Info().Title != "" {
-		s.titleOnce(sid, t.Info().Title) // the name typed in "+ New agent"
+	if t, ok := s.terms.Get(termID); ok {
+		s.tagSession(sid, t.Info().Profile)
+		if t.Info().Title != "" {
+			s.titleOnce(sid, t.Info().Title) // the name typed in "+ New agent"
+		}
 	}
 	s.dirty.Store(true)
 }
@@ -172,6 +184,10 @@ func (s *Server) startTerm(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if err := s.resolveProfile(&sp); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	t, err := s.terms.Start(sp)
 	if errors.Is(err, term.ErrUnsupported) {
 		http.Error(w, err.Error(), http.StatusNotImplemented)
@@ -184,6 +200,7 @@ func (s *Server) startTerm(w http.ResponseWriter, r *http.Request) {
 	s.log.Printf("terminal %s: %s %v in %s (pid %d)", t.Info().ID, sp.Agent, sp.Resume, t.Info().Dir, t.Info().PID)
 	if sp.Resume != "" && !sp.Fork {
 		s.terms.DropExited(sid, t.Info().ID) // the resumed terminal replaces the one that ended
+		s.tagSession(sid, t.Info().Profile)
 		if sp.Title != "" {
 			s.applyTitle(sid, sp.Title) // a resume names a session we already know
 		}

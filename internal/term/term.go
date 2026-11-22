@@ -36,6 +36,13 @@ type Spec struct {
 	Resume string `json:"resume,omitempty"`
 	Fork   bool   `json:"fork,omitempty"`
 	Title  string `json:"title,omitempty"` // card title for the session it starts (the daemon applies it)
+	// Profile picks a launch profile by id: "" runs the agent with the environment Helm
+	// inherited. Nil (left out) lets the daemon choose: a resume keeps the session's own.
+	Profile *string `json:"profile,omitempty"`
+	// Env and Scrub come from the profile (the daemon resolves it): Scrub drops inherited
+	// variables, then Env is added.
+	Env   []string          `json:"-"`
+	Scrub func(string) bool `json:"-"`
 }
 
 var sessionID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
@@ -50,6 +57,8 @@ type Info struct {
 	Resume string `json:"resume,omitempty"` // session id it was started to resume or fork
 	Fork   bool   `json:"fork,omitempty"`
 	Title  string `json:"title,omitempty"`
+	// Profile is the launch profile id it started with ("" = none).
+	Profile string `json:"profile,omitempty"`
 	// SessionID is the session running in it, once its hooks have reported one (the daemon
 	// links it by HLM_TERMINAL_ID or process id). Kept after the process exits.
 	SessionID string `json:"session_id,omitempty"`
@@ -101,7 +110,18 @@ func (m *Manager) Start(sp Spec) (*Term, error) {
 	id := newID()
 	cmd := exec.Command(l.Exe, l.Args...)
 	cmd.Dir = dir
-	cmd.Env = append(CleanEnv(), "TERM=xterm-256color", "COLORTERM=truecolor", "HLM_TERMINAL_ID="+id)
+	env := CleanEnv()
+	if sp.Scrub != nil {
+		kept := env[:0]
+		for _, kv := range env {
+			if k, _, _ := strings.Cut(kv, "="); !sp.Scrub(k) {
+				kept = append(kept, kv)
+			}
+		}
+		env = kept
+	}
+	env = append(env, sp.Env...)
+	cmd.Env = append(env, "TERM=xterm-256color", "COLORTERM=truecolor", "HLM_TERMINAL_ID="+id)
 	f, err := startPty(cmd, 120, 32)
 	if errors.Is(err, exec.ErrNotFound) {
 		return nil, fmt.Errorf("%s is not on Helm's PATH; start Helm from a shell where `%s` works (hlm stop, then hlm open)", l.Exe, l.Exe)
@@ -111,7 +131,7 @@ func (m *Manager) Start(sp Spec) (*Term, error) {
 	}
 	t := &Term{
 		info: Info{Agent: sp.Agent, ID: id, Dir: dir, Name: filepath.Base(dir), Prompt: strings.TrimSpace(sp.Prompt),
-			Resume: sp.Resume, Fork: sp.Fork, Title: sp.Title, Started: time.Now().UnixMilli(), PID: cmd.Process.Pid},
+			Resume: sp.Resume, Fork: sp.Fork, Title: sp.Title, Profile: profileID(sp), Started: time.Now().UnixMilli(), PID: cmd.Process.Pid},
 		cmd: cmd, f: f, subs: map[chan []byte]struct{}{}, ring: ring{max: scrollbackMax},
 	}
 	if sp.Resume != "" && !sp.Fork {
@@ -123,6 +143,13 @@ func (m *Manager) Start(sp Spec) (*Term, error) {
 	go t.pump(m.changed)
 	m.changed()
 	return t, nil
+}
+
+func profileID(sp Spec) string {
+	if sp.Profile == nil {
+		return ""
+	}
+	return *sp.Profile
 }
 
 // LinkFirst records the first session a terminal reports (by HLM_TERMINAL_ID). Later

@@ -196,3 +196,39 @@ func Split(key string) (agentName, native string) {
 	}
 	return "", key
 }
+
+// Preset is one way to connect an agent to a model provider: an API key, a company
+// gateway, a cloud account. A launch profile picks a preset and fills in its fields;
+// Helm sets the result as environment variables on the terminals it starts.
+type Preset struct {
+	ID    string            `json:"id"`
+	Label string            `json:"label"`
+	Hint  string            `json:"hint,omitempty"`
+	Fixed map[string]string `json:"fixed,omitempty"` // always set, e.g. a provider switch
+	// Fields are what the user fills in; each one is one environment variable.
+	Fields []PresetField `json:"fields"`
+	// Spend says whether the preset's gateway may report real spend per key (litellm), so
+	// the dashboard offers to read it. "" = only Helm's own estimate.
+	Spend string `json:"spend,omitempty"`
+}
+
+type PresetField struct {
+	Var         string `json:"var"`
+	Label       string `json:"label"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Default     string `json:"default,omitempty"`
+	Secret      bool   `json:"secret,omitempty"` // a key: stored apart and never sent back
+	Required    bool   `json:"required,omitempty"`
+	URL         bool   `json:"url,omitempty"` // the endpoint: used to ask the gateway for spend
+}
+
+// Profiler is optional: an adapter whose agent can be pointed at other providers.
+type Profiler interface {
+	Presets() []Preset
+	// ProfileScrub reports whether an inherited variable must be dropped when a terminal
+	// starts with a profile, so the shell's own provider settings can't mix with it.
+	ProfileScrub(key string) bool
+	// ProfileConflicts names settings that would override a profile's variables (the
+	// agent's own config files win over the environment). Empty when there are none.
+	ProfileConflicts() []string
+}

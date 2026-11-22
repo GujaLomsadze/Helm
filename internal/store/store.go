@@ -58,7 +58,10 @@ ALTER TABLE sessions ADD COLUMN native_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE sessions ADD COLUMN background INTEGER NOT NULL DEFAULT 0;
 UPDATE events SET agent = 'claude' WHERE source IN ('hook','statusline');
 UPDATE sessions SET agent = 'claude', native_id = session_id
-  WHERE EXISTS (SELECT 1 FROM events e WHERE e.session_id = sessions.session_id AND e.agent = 'claude');`}
+  WHERE EXISTS (SELECT 1 FROM events e WHERE e.session_id = sessions.session_id AND e.agent = 'claude');`, `
+CREATE TABLE session_profiles(session_id TEXT PRIMARY KEY, profile_id TEXT NOT NULL, ts INTEGER NOT NULL);
+CREATE TABLE cost_hours(session_id TEXT NOT NULL, hour INTEGER NOT NULL, usd REAL NOT NULL, PRIMARY KEY(session_id, hour));
+` + costBackfill}
 
 // ErrDuplicate: an adapter delivered an event it had already delivered (same key).
 var ErrDuplicate = errors.New("event already stored")
