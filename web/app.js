@@ -294,6 +294,11 @@ function card(s) {
       QUIET.includes(s.status)
         ? h("button", { class: "dismiss", type: "button", "data-dismiss": s.session_id, "aria-label": "Hide " + s.name, title: "Hide this card (it comes back if the session gets busy again)" }, "✕")
         : null,
+      window.HelmSounds
+        ? h("button", { class: "card-mute" + (s.muted ? " on" : ""), type: "button", "data-mute": s.session_id, "aria-pressed": String(!!s.muted),
+          "aria-label": (s.muted ? "Unmute " : "Mute ") + s.name, title: s.muted ? "Muted: no sound for this agent. Click to unmute" : "Mute sounds for this agent" },
+          "♪")
+        : null,
       h("div", { class: "head-text" }, h("h3", { class: "card-name one", title: s.auto_name ? `${s.name} (${s.auto_name})` : s.name }, multi ? kit.glyph(s.agent || "") : null, s.name,
           s.profile && window.HelmProfiles ? HelmProfiles.badge(s.profile) : null),
         h("div", { class: "meta one", title: where }, s.in_hlm ? h("span", { class: "in-hlm", title: "Running in a Helm terminal" }, "⌨ ") : null, where || DASH)),
@@ -335,6 +340,7 @@ function renderGrid(v) {
     const pid = (v.session_profiles || {})[s.session_id];
     const prof = pid && (v.profiles || []).find((p) => p.id === pid);
     if (prof) s = { ...s, profile: { id: prof.id, name: prof.name, color: prof.color, preset: prof.preset, agent: prof.agent } };
+    if (window.HelmSounds && HelmSounds.isMuted(s.session_id)) s = { ...s, muted: true };
     const sig = JSON.stringify(s);
     let c = cards.get(s.session_id);
     if (!c || c.sig !== sig) {
@@ -415,6 +421,7 @@ function render() {
   renderSide(view);
   renderTimeline(view);
   if (window.HelmAgents) HelmAgents.update(view);
+  if (window.HelmSounds) HelmSounds.observe(view.sessions);
 }
 
 // Between snapshots only clocks move; header/inbox/timeline are cheap and have no animation.
@@ -443,6 +450,8 @@ $("grid").addEventListener("keydown", (e) => {
 });
 $("grid").addEventListener("click", async (e) => {
   if (e.target.closest("#empty-agent")) return $("agent-open").click(); // same New agent form as the header button
+  const m = e.target.closest("[data-mute]");
+  if (m) { HelmSounds.toggleCard(m.dataset.mute); return render(); }
   const b = e.target.closest("[data-dismiss]");
   if (!b) {
     const c = e.target.closest("[data-open]");
@@ -498,6 +507,7 @@ if (!window.HLM_FIXTURES) {
   };
   kit.load().then(agentsLoaded);
   setInterval(() => kit.load().then(agentsLoaded), 60000); // a newly used agent brings its controls
+  if (window.HelmSounds) HelmSounds.mount($("sound"));
   connect();
   setInterval(tick, 1000);
 }

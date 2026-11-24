@@ -477,3 +477,16 @@ dialog.pf-dlg::backdrop { background: var(--scrim); }
 .ag-prof .ag-prof-add { min-width: 0; align-content: center; color: var(--chip-accent-fg); }
 .ag-warn { border: 1px solid var(--yellow); color: var(--yellow); padding: 8px 10px; font-size: 12px; }
 .ag-warn.t-red { border-color: var(--red); color: var(--red); }
+
+/* ---- sound effects (sounds.js) ---- */
+.snd .snd-x { display: none; }
+.snd.snd-off .snd-x { display: inline; }
+.snd.snd-off .snd-wave { display: none; }
+.snd.snd-off, .snd.snd-locked { color: var(--muted); }
+.snd.snd-off .ico, .snd.snd-locked .ico { filter: none; }
+.card-mute { flex: none; background: transparent; border: 1px solid var(--rule-soft); color: var(--muted); width: 28px; height: 28px; margin-right: -2px;
+  cursor: pointer; font: 15px/1 var(--font-read); opacity: 0; transition: opacity 0.15s; }
+.card:hover .card-mute, .card-mute:focus-visible, .card-mute.on { opacity: 1; }
+.card-mute.on { color: var(--red); border-color: var(--red); text-decoration: line-through; }
+.card-mute:hover { color: var(--text); border-color: var(--border); }
+@media (hover: none) { .card-mute { opacity: 1; } }
