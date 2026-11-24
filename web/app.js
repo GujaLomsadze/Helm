@@ -420,6 +420,7 @@ function render() {
   renderGrid(view);
   renderSide(view);
   renderTimeline(view);
+  paintTab(view);
   if (window.HelmAgents) HelmAgents.update(view);
   if (window.HelmSounds) HelmSounds.observe(view.sessions);
 }
@@ -432,6 +433,35 @@ function tick() {
   renderHeader(view);
   renderSide(view);
   if (++ticks % 5 === 0) renderTimeline(view);
+}
+
+// Tab: "Helm (2✓ 1!)" = 2 agents done, 1 needs you; the icon gets an amber dot while
+// something needs you, else a green one while something is done.
+const tabIcon = document.querySelector('link[rel="icon"]');
+const tabBase = new Image();
+tabBase.src = tabIcon ? tabIcon.href : "";
+tabBase.onload = () => { tabKey = ""; if (view) paintTab(view); };
+let tabKey = "";
+function paintTab(v) {
+  const done = v.sessions.filter((s) => s.status === "done").length, need = v.stats.needs_you || 0;
+  const key = done + "/" + need;
+  if (key === tabKey) return;
+  tabKey = key;
+  document.title = done || need ? `Helm (${done}✓ ${need}!)` : "Helm";
+  if (!tabIcon || !tabBase.complete || !tabBase.naturalWidth) { tabKey = ""; return; } // retry next snapshot
+  const css = getComputedStyle(document.documentElement);
+  const dot = need ? css.getPropertyValue("--warn") : done ? css.getPropertyValue("--ok") : "";
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  g.drawImage(tabBase, 0, 0, 64, 64);
+  if (dot) {
+    g.beginPath(); g.arc(50, 14, 13, 0, 2 * Math.PI);
+    g.fillStyle = css.getPropertyValue("--bg"); g.fill();
+    g.beginPath(); g.arc(50, 14, 10, 0, 2 * Math.PI);
+    g.fillStyle = dot; g.fill();
+  }
+  tabIcon.href = c.toDataURL("image/png");
 }
 
 function setConn(live) {

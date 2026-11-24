@@ -1,8 +1,8 @@
 "use strict";
 // Sound effects for agent status changes (picked sketch: docs/sketches/sounds.html, "Glass" pack).
-// Tones are synthesized with Web Audio: no sound files. Sounds play only while you are away from the
-// tab (hidden or unfocused), bursts within 1.5 s coalesce into the most urgent one, and each card can
-// be muted, and the tab title counts events you haven't looked at. Cards already animate per status.
+// Tones are synthesized with Web Audio: no sound files. Sounds always play unless muted (header
+// button, or per card); bursts within 1.5 s coalesce into the most urgent one.
+// Cards already animate per status; app.js keeps the tab title and icon current.
 window.HelmSounds = (function () {
   const KEY = "helm.sounds";
   const COALESCE_MS = 1500;
@@ -60,19 +60,10 @@ window.HelmSounds = (function () {
   }
 
   // ---- when to make noise ----
-  const away = () => document.hidden || !document.hasFocus();
-  let pending = [], timer = 0, unseen = 0;
-  const baseTitle = document.title;
-  function paintTitle() { document.title = unseen ? `● ${unseen} · ${baseTitle}` : baseTitle; }
-  function back() { if (!away() && unseen) { unseen = 0; paintTitle(); } }
-  addEventListener("focus", back);
-  document.addEventListener("visibilitychange", back);
+  let pending = [], timer = 0;
 
   function cue(ev, sid) {
     if (sid && isMuted(sid)) return;
-    if (!away()) return;
-    unseen++;
-    paintTitle();
     pending.push(ev);
     clearTimeout(timer);
     timer = setTimeout(() => {
@@ -134,7 +125,7 @@ window.HelmSounds = (function () {
     btn.setAttribute("aria-pressed", String(cfg.on));
     btn.title = !cfg.on ? "Sounds off. Click to turn on"
       : locked ? "Sounds on, waiting for a click anywhere on the page (browsers block audio until then)"
-        : "Sounds on: a chime when an agent is done, waits on you, is blocked or nears its budget, while you're in another window. Click to mute";
+        : "Sounds on: a chime when an agent is done, waits on you, is blocked or nears its budget. Click to mute";
   }
   function mount(el) {
     btn = el;
