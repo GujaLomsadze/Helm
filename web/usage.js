@@ -49,7 +49,7 @@
       h("span", null, h("i", { class: "k dash" }), "next 7 days at the last 7 days' pace"),
       h("span", null, h("i", { class: "k capk" }), "budget"));
     const plot = h("div", { class: "plot keys-plot" });
-    box.replaceChildren(head, keyList(rows), plot, legend,
+    box.replaceChildren(head, h("div", { class: "keys-body" }, keyList(rows), h("div", { class: "keys-chart" }, plot, legend)),
       h("p", { class: "meta" }, "My login is what your own sessions would cost at API prices; your plan covers it. " +
         "Gateway figures refresh once a minute while this page is open."));
     draw(plot, rows);

@@ -1,4 +1,4 @@
-/* Limits page (limits.html). Each limit gets the full width, 5-hour on top and weekly below it, at any window size. */
+/* Usage page (limits.html): the two limits side by side (stacked when narrow), then API keys. */
 body { padding-bottom: 16px; font-size: 15px; }
 .stats-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .chart-panel { padding: 18px 20px 16px; display: grid; gap: 14px; min-width: 0; container-type: inline-size; }
@@ -18,32 +18,19 @@ body { padding-bottom: 16px; font-size: 15px; }
 .tile .sub2 { color: var(--muted); font-size: 14px; }
 .c-ok { color: var(--ok) !important; } .c-yellow { color: var(--yellow) !important; } .c-red { color: var(--red) !important; }
 
-/* advice: one loud word + one plain sentence + pace vs safe pace */
-.advice { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 18px 20px;
-  border: 1px solid; border-left-width: 5px; border-radius: var(--radius); }
-.advice.v-ok { border-color: rgba(92,255,157,0.35); background: rgba(92,255,157,0.04); }
-.advice.v-warn { border-color: rgba(255,214,107,0.35); background: rgba(255,214,107,0.04); }
-.advice.v-red { border-color: rgba(255,74,61,0.5); background: rgba(255,74,61,0.06); }
-.advice.v-ok { border-left-color: var(--ok); } .advice.v-warn { border-left-color: var(--yellow); } .advice.v-red { border-left-color: var(--red); }
-.say { display: grid; gap: 8px; min-width: 0; }
-.say .word { font: 54px/0.85 var(--font-deco); text-transform: uppercase; letter-spacing: 0.04em; text-shadow: 0 0 14px currentColor; }
-.say p { margin: 0; font-size: 18px; line-height: 1.45; color: var(--text); }
-.say p b { font-weight: 600; }
-.pace { display: grid; gap: 10px; min-width: 0; }
-.pace-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 14px; align-items: center; }
-.pace-row .lab { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; }
-.pace-row .val { font: 36px/1 var(--font-deco); font-variant-numeric: tabular-nums; text-align: right; min-width: 5.5ch; }
-.pace-track { height: 14px; background: var(--track); position: relative; }
-.pace-fill { position: absolute; inset: 0 auto 0 0; box-shadow: 0 0 10px currentColor; background: currentColor; }
-.pace-delta { font-size: 15px; color: var(--muted); }
-.pace-delta b { font: 30px/1 var(--font-deco); margin-right: 6px; }
-@container (min-width: 1100px) { .advice { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: center; gap: 16px 32px; } }
-@container (max-width: 560px) {
-  .tiles { grid-template-columns: 1fr; } .tile .num { font-size: 56px; } .say .word { font-size: 42px; }
-  .pace-row { grid-template-columns: 80px minmax(0, 1fr) auto; } .pace-row .val { font-size: 28px; }
-}
-
-.plot { position: relative; height: 340px; }
+/* one card per limit: used %, verdict sentence, pace chart (picked sketch "D · Mix") */
+.lim-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 16px; align-items: start; }
+.lim-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.lim-used { display: flex; align-items: baseline; gap: 10px; }
+.lim-used .num { font: 64px/0.85 var(--font-deco); font-variant-numeric: tabular-nums; text-shadow: 0 0 12px currentColor; }
+.lim-used .num small { font-size: 38px; margin-left: 2px; opacity: 0.8; }
+.lim-used .sub2 { color: var(--muted); font-size: 14px; }
+.lim-verdict { margin: 0; font-size: 15px; line-height: 1.5; }
+.lim-verdict b { font-weight: 600; }
+.lim-word { font: 24px/1 var(--font-deco); text-transform: uppercase; letter-spacing: 0.04em; text-shadow: 0 0 10px currentColor; margin-right: 4px; }
+.lim-delta { color: var(--muted); }
+.lim-delta b { font-weight: 600; }
+.plot { position: relative; height: 220px; }
 .plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .ax { fill: var(--muted); font: 13px var(--font-read); }
 .grid-l { stroke: var(--rule-soft); stroke-width: 1; }
@@ -83,7 +70,9 @@ body { padding-bottom: 16px; font-size: 15px; }
 /* API keys (usage.js): one row per launch profile, then spend over time */
 .keys-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .keys-tools .btn { min-height: 38px; }
-.keys { display: grid; }
+.keys-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 12px 24px; align-items: start; }
+.keys-chart { display: grid; gap: 10px; min-width: 0; }
+.keys { display: grid; container-type: inline-size; }
 .key { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) auto 44px; gap: 8px 18px; align-items: center; padding: 12px 0; border-top: 1px solid var(--rule-soft); }
 .key:first-child { border-top: 0; }
 .key.deleted { opacity: 0.6; }
@@ -94,7 +83,7 @@ body { padding-bottom: 16px; font-size: 15px; }
 .key-v { font: 40px/1 var(--font-deco); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; text-shadow: 0 0 10px currentColor; }
 .key-v small { font: 14px var(--font-read); color: var(--muted); text-shadow: none; }
 .key-edit { min-width: 44px; justify-content: center; padding: 0; }
-.keys-plot { height: 300px; }
+.keys-plot { height: 240px; }
 .tip > div { display: flex; gap: 6px; align-items: center; }
 @container (max-width: 640px) {
   .key { grid-template-columns: minmax(0, 1fr) 44px; }

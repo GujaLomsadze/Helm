@@ -1,5 +1,6 @@
 "use strict";
-// Helm Limits page: plan-usage history (5h and weekly) with an "at this pace" projection.
+// Helm Usage page: plan-usage history (5h and weekly) with an "at this pace" projection.
+// Each limit is one card: used %, a one-line verdict, and the pace chart.
 // Builds DOM with createElement/textContent only, like app.js.
 
 const MIN = 60e3, HOUR = 60 * MIN, DAY = 24 * HOUR;
@@ -125,7 +126,8 @@ function render(id) {
     try { localStorage.setItem(PACE_KEY, JSON.stringify(pace)); } catch { /* per-browser convenience only */ }
     render(id);
   });
-  const head = h("div", { class: "chart-head" }, h("h2", null, c.title), seg);
+  const sub = h("div", { class: "lim-sub" });
+  const head = h("div", { class: "chart-head" }, h("div", null, h("h2", null, c.title), sub), seg);
 
   if (!d.reset || !d.pts.length) {
     box.replaceChildren(head, h("div", { class: "empty-note" },
@@ -164,32 +166,19 @@ function render(id) {
     else if (p.rate === 0) delta = [B("c-ok", rateTxt(p.budget)), "idle now; this pace is still safe"];
     else delta = [B("c-ok", "+" + Math.round((p.budget / p.rate - 1) * 100) + "%"), "room to speed up and still make it"];
   }
-  const top = Math.max(p.rate, p.budget) * 1.1 || 1;
-  const bar = (r, cls) => h("div", { class: "pace-track" }, h("div", { class: "pace-fill " + cls, style: `width:${((r / top) * 100).toFixed(1)}%` }));
-  const fast = hits ? "red" : "ok";
-  const advice = h("div", { class: "advice " + { red: "v-red", yellow: "v-warn", ok: "v-ok" }[tone] },
-    h("div", { class: "say" }, h("div", { class: "word c-" + tone }, word), h("p", null, sentence)),
-    h("div", { class: "pace" },
-      h("div", { class: "pace-row" }, h("span", { class: "lab" }, "your pace"), bar(p.rate, "c-" + fast), h("span", { class: "val c-" + fast }, rateTxt(p.rate))),
-      h("div", { class: "pace-row" }, h("span", { class: "lab" }, "safe pace"), bar(p.budget, ""), h("span", { class: "val" }, rateTxt(p.budget))),
-      h("div", { class: "pace-delta" }, delta)));
-
   const stale = p.tNow - p.lastTs > 10 * MIN;
-  const num = (v, cls) => h("span", { class: "num" + (cls ? " c-" + cls : "") }, v, h("small", null, "%"));
-  const tile = (lab, numEl, sub) => h("div", { class: "tile" }, h("span", { class: "lab" }, lab), numEl, h("span", { class: "sub2" }, sub));
-  const tiles = h("div", { class: "tiles" },
-    tile("used now", num(Math.round(p.used), tone3(p.used)), stale ? "last reading " + dur(p.tNow - p.lastTs) + " ago" : "of this " + c.short + " limit"),
-    tile("at reset", num(hits ? 100 : Math.min(100, Math.round(p.atReset)), tone),
-      hits ? "capped at " + c.when(p.capAt) : perfect ? "right as it resets" : "if you keep this pace"),
-    tile("resets in", h("span", { class: "num" }, dur(p.reset - p.tNow)), c.when(p.reset)));
-
+  sub.textContent = "resets " + c.when(p.reset) + " · in " + dur(p.reset - p.tNow);
+  const used = h("div", { class: "lim-used" },
+    h("span", { class: "num c-" + tone3(p.used) }, Math.round(p.used), h("small", null, "%")),
+    h("span", { class: "sub2" }, stale ? "used · last reading " + dur(p.tNow - p.lastTs) + " ago" : "used"));
+  const verdict = h("p", { class: "lim-verdict" }, h("span", { class: "lim-word c-" + tone }, word), " ", sentence,
+    " ", h("span", { class: "lim-delta" }, delta[0], " ", delta[1], p.used < 100 && p.rate > 0 ? " (" + rateTxt(p.rate) + " → " + rateTxt(p.budget) + ")" : ""));
   const plot = h("div", { class: "plot" });
   const legend = h("div", { class: "legend" },
     h("span", null, h("i", { class: "k" }), "used"),
-    h("span", null, h("i", { class: "k dash" }), "if you keep this pace"),
-    h("span", null, h("i", { class: "k dot" }), "max safe pace → 100% at reset"),
-    h("span", null, h("i", { class: "k capk" }), "limit"));
-  box.replaceChildren(head, advice, tiles, plot, legend);
+    h("span", null, h("i", { class: "k dash" }), "this pace"),
+    h("span", null, h("i", { class: "k dot" }), "safe pace (100% at reset)"));
+  box.replaceChildren(head, used, verdict, plot, legend);
   draw(plot, id, c, d, p, hits);
 }
 
@@ -267,7 +256,8 @@ function draw(plot, id, c, d, p, hits) {
 
   if (hits) {
     svgEl("circle", { class: "dot r", cx: x(p.capAt), cy: y(100), r: 4 }, svg);
-    svgEl("text", { class: "lbl r", x: x(p.capAt), y: y(100) + 22, "text-anchor": "start", dx: 8 }, svg, "out at " + hm(p.capAt));
+    const right = x(p.capAt) > W * 0.6; // near the right edge the label goes left of the dot
+    svgEl("text", { class: "lbl r", x: x(p.capAt), y: y(100) + 22, "text-anchor": right ? "end" : "start", dx: right ? -8 : 8 }, svg, "out at " + hm(p.capAt));
   } else {
     svgEl("text", { class: "lbl m", x: x(p.reset) - 6, y: y(endV) + 18, "text-anchor": "end" }, svg, "~" + Math.round(endV) + "% at reset");
   }

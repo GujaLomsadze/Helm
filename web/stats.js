@@ -147,15 +147,13 @@ function drawKpis() {
   const modelLine = models.length ? models.slice(0, 2).map(([m, v]) => [h("b", null, Math.round((v / (k.tokens || 1)) * 100) + "%"), " " + m]).flatMap((x, i) => (i ? [" · ", x] : [x])) : "no token readings";
   const change = k.spend_prev > 0 ? Math.round((k.spend / k.spend_prev - 1) * 100) : null;
   const waitMin = Math.floor(k.wait_median / 60), waitSec = Math.round(k.wait_median % 60);
-  const failPct = k.tool_calls ? (k.tool_fails / k.tool_calls) * 100 : 0;
   $("kpis").replaceChildren(
     kpi("spend", big(k.spend >= 100 ? "$" + Math.round(k.spend) : money(k.spend)),
       change == null ? (days === 1 ? "today so far" : "no spend in the " + days + " days before") : [h("b", null, (change >= 0 ? "+" : "") + change + "%"), " vs the " + days + " days before"], spark),
     kpi("tokens", big(tok(k.tokens)), modelLine),
     kpi("agent hours", big(k.agent_hours >= 10 ? Math.round(k.agent_hours) : k.agent_hours.toFixed(1), "h"), [h("b", null, String(k.peak_agents)), " agent" + (k.peak_agents === 1 ? "" : "s") + " at once at peak"]),
     kpi("you answer in", k.wait_median ? big(waitMin ? waitMin + "m" : waitSec + "s", waitMin ? String(waitSec).padStart(2, "0") + "s" : null) : big("—"),
-      res.waits.length ? ["median · slowest 10% ", h("b", null, dur(k.wait_p90) + "+")] : "no prompts waited on you"),
-    kpi("tool failures", big(failPct.toFixed(1), "%"), [h("b", null, String(k.tool_fails)), " of " + k.tool_calls + " tool calls"]));
+      res.waits.length ? ["median · slowest 10% ", h("b", null, dur(k.wait_p90) + "+")] : "no prompts waited on you"));
 }
 
 function width(id, min) { return Math.max(min, $(id).clientWidth || min); }
@@ -371,5 +369,17 @@ kit.load().then(() => { multi = kit.multi([]); drawAgentFilter(); if (agentParam
 load();
 setInterval(() => { if (tip.hidden) load(); }, 60e3); // history: a refresh a minute is plenty
 let rz;
+// Everything below Spend per day folds (picked sketch "Stats A"); which sections are open is
+// remembered per browser. A section drawn while closed had no width: redraw when it opens.
+const FOLD_KEY = "hlm.stats.open.v1";
+let openFolds = (() => { try { return new Set(JSON.parse(localStorage.getItem(FOLD_KEY) || "[]")); } catch { return new Set(); } })();
+for (const d of document.querySelectorAll("details.st-fold")) {
+  d.open = openFolds.has(d.dataset.fold);
+  d.addEventListener("toggle", () => {
+    if (d.open) openFolds.add(d.dataset.fold); else openFolds.delete(d.dataset.fold);
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify([...openFolds])); } catch { /* per-browser convenience only */ }
+    if (d.open && res) render();
+  });
+}
 addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => res && render(), 120); });
 addEventListener("scroll", hideTip, { passive: true });
