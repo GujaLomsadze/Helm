@@ -70,6 +70,53 @@ func TestProfilesNeverReturnKeys(t *testing.T) {
 	}
 }
 
+// Lists show only a key's last four characters; reveal returns the key to the dashboard's
+// own page and to nothing else.
+func TestRevealKeyOnlyFromDashboard(t *testing.T) {
+	ts, srv := newTestServer(t)
+	if err := srv.OpenSecrets(filepath.Join(t.TempDir(), "secrets.json")); err != nil {
+		t.Fatal(err)
+	}
+	_, body := doJSON(t, "POST", ts.URL+"/v1/profiles", corpProfile)
+	var p struct{ ID string }
+	_ = json.Unmarshal([]byte(body), &p)
+	if _, out := doJSON(t, "GET", ts.URL+"/v1/profiles", ""); !strings.Contains(out, `"ANTHROPIC_AUTH_TOKEN":"…1234"`) || strings.Contains(out, "sk-secret-corp") {
+		t.Fatalf("list should carry only the mask: %s", out)
+	}
+	self := ts.URL // http://127.0.0.1:port, the dashboard's own origin
+	other := strings.Replace(ts.URL, "127.0.0.1", "localhost", 1)
+	reveal := func(origin, header, v string) (int, string) {
+		req, _ := http.NewRequest("POST", ts.URL+"/v1/profiles/"+p.ID+"/reveal", strings.NewReader(`{"var":"`+v+`"}`))
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		if header != "" {
+			req.Header.Set("X-Helm-Reveal", header)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK && resp.Header.Get("Cache-Control") != "no-store" {
+			t.Fatal("reveal reply may be cached")
+		}
+		return resp.StatusCode, string(b)
+	}
+	if code, out := reveal(self, "1", "ANTHROPIC_AUTH_TOKEN"); code != http.StatusOK || !strings.Contains(out, `"sk-secret-corp-1234"`) {
+		t.Fatalf("dashboard reveal = %d %s", code, out)
+	}
+	for _, c := range []struct{ origin, header string }{{self, ""}, {"", "1"}, {other, "1"}, {"http://evil.example", "1"}} {
+		if code, out := reveal(c.origin, c.header, "ANTHROPIC_AUTH_TOKEN"); code == http.StatusOK || strings.Contains(out, "sk-secret") {
+			t.Fatalf("origin %q header %q got the key: %d %s", c.origin, c.header, code, out)
+		}
+	}
+	if code, _ := reveal(self, "1", "ANTHROPIC_BASE_URL"); code != http.StatusNotFound {
+		t.Fatalf("a non-secret var = %d, want 404", code)
+	}
+}
+
 // A terminal started with a profile gets its variables and none of the shell's own
 // provider settings; resuming that session keeps the profile.
 func TestTerminalRunsWithProfile(t *testing.T) {

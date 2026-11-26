@@ -1,0 +1,42 @@
+/* Profiles page (profiles.html): profile list on the left, the chosen one in full on the right
+   (picked sketch "A · List + detail"). Classes are pp- prefixed; colours come from theme.css tokens. */
+body { padding-bottom: 32px; }
+.pp-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px; margin-bottom: 14px; }
+.pp-h { margin: 0; font: 600 18px var(--font-read); text-transform: uppercase; letter-spacing: 0.06em; }
+.pp-m { color: var(--muted); font-size: 13px; margin: 0; }
+.pp-page { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.pp-list { display: grid; gap: 6px; }
+.pp-item { display: grid; gap: 2px; text-align: left; background: var(--panel); border: 1px solid var(--border); color: var(--text);
+  padding: 12px 14px; font: 14px var(--font-read); cursor: pointer; border-radius: var(--radius); min-width: 0; }
+.pp-item:hover { border-color: var(--accent); }
+.pp-item[aria-current="true"] { border-color: var(--accent); background: var(--chip-accent-bg); }
+.pp-item > span:first-child { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.pp-own { border-style: dashed; cursor: default; background: transparent; }
+.pp-own:hover { border-color: var(--border); }
+.pp-detail { padding: 18px 20px; display: grid; gap: 14px; min-width: 0; }
+.pp-name { margin: 0; font: 34px/1 var(--font-deco); display: flex; align-items: center; gap: 10px; font-weight: 400; }
+.pp-head { display: grid; gap: 4px; }
+.pp-fields { display: grid; }
+.pp-field { display: grid; grid-template-columns: minmax(0, 210px) minmax(0, 1fr); gap: 6px 16px; align-items: center; padding: 10px 0; border-top: 1px solid var(--rule-soft); }
+.pp-var { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.pp-val { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.pp-val code { font: 14px var(--font-read); background: var(--bg); border: 1px solid var(--rule-soft); padding: 5px 9px; overflow-wrap: anywhere; min-width: 0; }
+.pp-secret { color: var(--warn); letter-spacing: 0.04em; }
+.pp-secret.shown { color: var(--text); border-color: var(--warn) !important; letter-spacing: 0; user-select: all; }
+.pp-count { color: var(--warn); font-size: 12px; }
+.pp-sm { min-height: 34px; font-size: 17px; padding: 0 11px; }
+.pp-input { background: var(--bg); color: var(--text); border: 1px solid var(--accent); font: 16px var(--font-read); padding: 6px 10px; width: min(100%, 360px); min-height: 38px; }
+.pp-input:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+.pp-meter { width: 160px; }
+.pp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pp-probe { margin: 0; font-size: 14px; }
+.pp-probe.ok { color: var(--ok); } .pp-probe.warn { color: var(--warn); }
+.pp-empty { padding: 28px 22px; color: var(--muted); grid-column: 1 / -1; }
+.pp-empty b { display: block; font: 30px/1 var(--font-deco); color: var(--text); text-transform: uppercase; margin-bottom: 8px; }
+.pp-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--ok); color: var(--ok);
+  padding: 10px 16px; font-size: 14px; z-index: 30; }
+.pp-toast.warn { border-color: var(--warn); color: var(--warn); }
+@media (max-width: 760px) {
+  .pp-page { grid-template-columns: minmax(0, 1fr); }
+  .pp-field { grid-template-columns: minmax(0, 1fr); }
+}

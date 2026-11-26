@@ -9,7 +9,7 @@ import (
 )
 
 func TestAssetsEmbedded(t *testing.T) {
-	for _, p := range []string{"index.html", "app.js", "editor.js", "theme.css", "limits.html", "limits.js", "limits.css", "stats.html", "stats.js", "stats.css", "term.html", "term.js", "agents.js", "agentkit.js", "sounds.js", "ui.html", "ui.js", "icons/claude.svg", "icons/codex.svg", "vendor/xterm.js", "vendor/xterm.css", "vendor/addon-fit.js", "vendor/LICENSE-xterm.txt", "fonts/VT323-Regular.ttf", "fonts/IBMPlexMono-Regular.ttf", "fonts/IBMPlexMono-SemiBold.ttf"} {
+	for _, p := range []string{"index.html", "app.js", "editor.js", "theme.css", "limits.html", "limits.js", "limits.css", "stats.html", "stats.js", "stats.css", "term.html", "term.js", "agents.js", "agentkit.js", "sounds.js", "profiles.html", "profiles-page.js", "profiles-page.css", "ui.html", "ui.js", "icons/claude.svg", "icons/codex.svg", "vendor/xterm.js", "vendor/xterm.css", "vendor/addon-fit.js", "vendor/LICENSE-xterm.txt", "fonts/VT323-Regular.ttf", "fonts/IBMPlexMono-Regular.ttf", "fonts/IBMPlexMono-SemiBold.ttf"} {
 		if _, err := fs.Stat(FS, p); err != nil {
 			t.Errorf("missing %s: %v", p, err)
 		}
@@ -32,9 +32,9 @@ func TestAssetsEmbedded(t *testing.T) {
 			t.Errorf("stats.html lacks %s", ref)
 		}
 	}
-	for _, page := range []string{"index.html", "limits.html", "stats.html"} { // every page links all three
+	for _, page := range []string{"index.html", "limits.html", "stats.html", "profiles.html"} { // every page links all four
 		b, _ := fs.ReadFile(FS, page)
-		for _, ref := range []string{`href="./"`, `href="limits.html"`, `href="stats.html"`} {
+		for _, ref := range []string{`href="./"`, `href="limits.html"`, `href="stats.html"`, `href="profiles.html"`} {
 			if !strings.Contains(string(b), ref) {
 				t.Errorf("%s nav lacks %s", page, ref)
 			}
@@ -44,7 +44,7 @@ func TestAssetsEmbedded(t *testing.T) {
 
 // Agent-supplied text must never be parsed as HTML.
 func TestNoInnerHTML(t *testing.T) {
-	for _, f := range []string{"app.js", "editor.js", "limits.js", "stats.js", "term.js", "agents.js", "agentkit.js", "sounds.js", "ui.js", "term.html"} {
+	for _, f := range []string{"app.js", "editor.js", "limits.js", "stats.js", "term.js", "agents.js", "agentkit.js", "sounds.js", "profiles-page.js", "ui.js", "term.html"} {
 		js, _ := os.ReadFile(f)
 		if regexp.MustCompile(`innerHTML|outerHTML|insertAdjacentHTML|document\.write`).Match(js) {
 			t.Fatalf("%s uses an HTML-parsing sink", f)
@@ -177,7 +177,7 @@ func TestTerminalsWiring(t *testing.T) {
 // Colours live in theme.css's :root, so a second theme is one more token set. No hex colour
 // outside :root; the rgba() tints still written inline may not grow (move them to tokens).
 func TestColoursAreTokens(t *testing.T) {
-	rgbaBudget := map[string]int{"theme.css": 47, "limits.css": 11, "stats.css": 6, "ui.html": 0, "term.html": 0}
+	rgbaBudget := map[string]int{"theme.css": 47, "limits.css": 11, "stats.css": 6, "profiles-page.css": 0, "ui.html": 0, "term.html": 0}
 	root := regexp.MustCompile(`(?s):root\s*\{[^}]*\}`)
 	hex := regexp.MustCompile(`#[0-9A-Fa-f]{3,8}\b`)
 	rgba := regexp.MustCompile(`rgba?\(`)

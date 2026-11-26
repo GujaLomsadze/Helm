@@ -84,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/profiles/probe", s.probeGateway)
 	mux.HandleFunc("PUT /v1/profiles/{id}", s.putProfile)
 	mux.HandleFunc("DELETE /v1/profiles/{id}", s.deleteProfile)
+	mux.HandleFunc("POST /v1/profiles/{id}/reveal", s.revealSecret)
 	mux.HandleFunc("GET /v1/cost", s.getCost)
 	mux.HandleFunc("GET /v1/stream", s.stream)
 	mux.HandleFunc("GET /healthz", s.healthz)

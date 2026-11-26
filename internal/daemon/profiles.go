@@ -13,7 +13,8 @@ import (
 
 // Launch profiles: named provider setups (a company gateway, an API key, a cloud account)
 // the New agent form can start an agent with. The list lives in the settings table; keys
-// live in a 0600 file next to the database and are never sent back to the dashboard.
+// live in a 0600 file next to the database. Lists carry only their last four characters;
+// one full key goes back only when the Profiles page asks for it (revealSecret).
 
 const settingProfiles = "profiles"
 
@@ -70,11 +71,14 @@ func (s *Server) publicProfiles() []profile.Public {
 	defer s.prof.mu.Unlock()
 	out := make([]profile.Public, 0, len(s.prof.list))
 	for _, p := range s.prof.list {
-		set := map[string]bool{}
+		set, masks := map[string]bool{}, map[string]string{}
 		for k, v := range s.prof.secrets.Get(p.ID) {
 			set[k] = v != ""
+			if v != "" {
+				masks[k] = profile.Mask(v)
+			}
 		}
-		out = append(out, profile.Public{Profile: p, Secrets: set})
+		out = append(out, profile.Public{Profile: p, Secrets: set, Masks: masks})
 	}
 	return out
 }
@@ -268,4 +272,36 @@ func (s *Server) deleteProfile(w http.ResponseWriter, r *http.Request) {
 	s.gw.forget(id)
 	s.dirty.Store(true)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// RevealHeader must be on a reveal request. A custom header makes a browser preflight any
+// cross-origin request, which the daemon never answers, so only the dashboard's own page
+// (same origin) can read a key; guard() has already refused foreign hosts and origins.
+const RevealHeader = "X-Helm-Reveal"
+
+// revealSecret: POST /v1/profiles/{id}/reveal {"var": "ANTHROPIC_AUTH_TOKEN"} → {"value": "…"}.
+// The Profiles page calls it when the user clicks Show or Copy on a key. Only from the
+// dashboard itself: the Origin must be this very host (any other localhost port is another
+// program's page), and the reply is never cached. The log records which key, not its value.
+func (s *Server) revealSecret(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get(RevealHeader) != "1" || r.Header.Get("Origin") != "http://"+r.Host {
+		http.Error(w, "keys are shown only on the Helm dashboard", http.StatusForbidden)
+		return
+	}
+	var in struct {
+		Var string `json:"var"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&in); err != nil || in.Var == "" {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	p, sec, ok := s.profileByID(r.PathValue("id"))
+	v := sec[in.Var]
+	if !ok || v == "" {
+		http.NotFound(w, r)
+		return
+	}
+	s.log.Printf("profile %q: %s shown on the dashboard", p.Name, in.Var)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, map[string]string{"value": v})
 }

@@ -217,7 +217,7 @@ type PresetField struct {
 	Label       string `json:"label"`
 	Placeholder string `json:"placeholder,omitempty"`
 	Default     string `json:"default,omitempty"`
-	Secret      bool   `json:"secret,omitempty"` // a key: stored apart and never sent back
+	Secret      bool   `json:"secret,omitempty"` // a key: stored apart, masked; shown only on request
 	Required    bool   `json:"required,omitempty"`
 	URL         bool   `json:"url,omitempty"` // the endpoint: used to ask the gateway for spend
 }

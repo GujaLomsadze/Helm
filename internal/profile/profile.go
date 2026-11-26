@@ -1,7 +1,8 @@
 // Package profile holds launch profiles: named ways to start an agent against a model
 // provider (a company gateway, an API key, a cloud account), each a preset from the
 // agent's adapter plus the values the user filled in. Keys live apart from the rest,
-// in a file only the user can read, and never leave the daemon once saved.
+// in a file only the user can read. The dashboard sees only their last four characters,
+// unless the user asks the Profiles page to show or copy one (POST /v1/profiles/{id}/reveal).
 package profile
 
 import (
@@ -57,10 +58,12 @@ type Profile struct {
 	Created    int64             `json:"created"`
 }
 
-// Public is a profile as the dashboard sees it: which secrets are set, never their values.
+// Public is a profile as the dashboard sees it: which secrets are set and their last four
+// characters, never the values. The Profiles page fetches one value on request (reveal).
 type Public struct {
 	Profile
-	Secrets map[string]bool `json:"secrets"` // var → set
+	Secrets map[string]bool   `json:"secrets"` // var → set
+	Masks   map[string]string `json:"masks"`   // var → "…a1b2"
 }
 
 // Input is a create or update request. A secret left out (or null) keeps the stored one;
